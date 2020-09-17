@@ -17,12 +17,12 @@ get_filename_component(YASM_EXE_PATH ${YASM} DIRECTORY)
 get_filename_component(PERL_EXE_PATH ${PERL} DIRECTORY)
 
 if(CMAKE_HOST_WIN32)
-	vcpkg_acquire_msys(MSYS_ROOT PACKAGES make)
-	set(BASH ${MSYS_ROOT}/usr/bin/bash.exe)
-	set(ENV{PATH} "${YASM_EXE_PATH};${MSYS_ROOT}/usr/bin;$ENV{PATH};${PERL_EXE_PATH}")
+    vcpkg_acquire_msys(MSYS_ROOT PACKAGES make)
+    set(BASH ${MSYS_ROOT}/usr/bin/bash.exe)
+    set(ENV{PATH} "${YASM_EXE_PATH};${MSYS_ROOT}/usr/bin;$ENV{PATH};${PERL_EXE_PATH}")
 else()
-	set(BASH /bin/bash)
-	set(ENV{PATH} "${YASM_EXE_PATH}:${MSYS_ROOT}/usr/bin:$ENV{PATH}:${PERL_EXE_PATH}")
+    set(BASH /bin/bash)
+    set(ENV{PATH} "${YASM_EXE_PATH}:${MSYS_ROOT}/usr/bin:$ENV{PATH}:${PERL_EXE_PATH}")
 endif()
 
 if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
@@ -63,6 +63,8 @@ if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
             --disable-examples
             --disable-tools
             --disable-docs
+            --enable-realtime-only
+            --enable-runtime-cpu-detect
         WORKING_DIRECTORY "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}"
         LOGNAME configure-${TARGET_TRIPLET})
 
@@ -120,7 +122,7 @@ else()
 
     set(OPTIONS_DEBUG "--enable-debug-libs --enable-debug --prefix=${CURRENT_PACKAGES_DIR}/debug")
     set(OPTIONS_RELEASE "--prefix=${CURRENT_PACKAGES_DIR}")
-	
+    
     if(VCPKG_LIBRARY_LINKAGE STREQUAL "dynamic")
         set(OPTIONS "${OPTIONS} --disable-static --enable-shared")
     else()
@@ -135,13 +137,13 @@ else()
         message(FATAL_ERROR "libvpx does not support architecture ${VCPKG_TARGET_ARCHITECTURE}")
     endif()
 
-	if(VCPKG_TARGET_IS_MINGW)
-		if(LIBVPX_TARGET_ARCH STREQUAL "x86")
-			set(LIBVPX_TARGET "x86-win32-gcc")
-		else()
-			set(LIBVPX_TARGET "x86_64-win64-gcc")
-		endif()
-	elseif(VCPKG_TARGET_IS_LINUX)
+    if(VCPKG_TARGET_IS_MINGW)
+        if(LIBVPX_TARGET_ARCH STREQUAL "x86")
+            set(LIBVPX_TARGET "x86-win32-gcc")
+        else()
+            set(LIBVPX_TARGET "x86_64-win64-gcc")
+        endif()
+    elseif(VCPKG_TARGET_IS_LINUX)
         set(LIBVPX_TARGET "${LIBVPX_TARGET_ARCH}-linux-gcc")
     elseif(VCPKG_TARGET_IS_OSX)
         set(LIBVPX_TARGET "${LIBVPX_TARGET_ARCH}-darwin17-gcc") # enable latest CPU instructions for best performance and less CPU usage on MacOS
