@@ -228,21 +228,11 @@ elseif(VCPKG_TARGET_IS_LINUX)
 			"ICU_LIBS=${ICU_RELEASE}"
             "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
             "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread"
-<<<<<<< .mine
-
-=======
-            "FONTCONFIG_LIBS=${FONTCONFIG_RELEASE} ${FREETYPE_RELEASE} ${EXPAT_RELEASE} -luuid"
->>>>>>> .theirs
         )
     list(APPEND DEBUG_OPTIONS
 			"ICU_LIBS=${ICU_DEBUG}"
             "SQLITE_LIBS=${SQLITE_DEBUG} -ldl -lpthread"
             "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread"
-<<<<<<< .mine
-
-=======
-            "FONTCONFIG_LIBS=${FONTCONFIG_DEBUG} ${FREETYPE_DEBUG} ${EXPAT_DEBUG} -luuid"
->>>>>>> .theirs
         )
 elseif(VCPKG_TARGET_IS_OSX)
     list(APPEND CORE_OPTIONS -icu -fontconfig)
