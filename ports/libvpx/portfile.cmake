@@ -15,23 +15,12 @@ vcpkg_find_acquire_program(PERL)
 get_filename_component(PERL_EXE_PATH ${PERL} DIRECTORY)
 
 if(CMAKE_HOST_WIN32)
-<<<<<<< .mine
-    vcpkg_acquire_msys(MSYS_ROOT PACKAGES make)
-    set(BASH ${MSYS_ROOT}/usr/bin/bash.exe)
-    set(ENV{PATH} "${YASM_EXE_PATH};${MSYS_ROOT}/usr/bin;$ENV{PATH};${PERL_EXE_PATH}")
-=======
 	vcpkg_acquire_msys(MSYS_ROOT PACKAGES make)
 	set(BASH ${MSYS_ROOT}/usr/bin/bash.exe)
 	set(ENV{PATH} "${MSYS_ROOT}/usr/bin;$ENV{PATH};${PERL_EXE_PATH}")
->>>>>>> .theirs
 else()
-<<<<<<< .mine
-    set(BASH /bin/bash)
-    set(ENV{PATH} "${YASM_EXE_PATH}:${MSYS_ROOT}/usr/bin:$ENV{PATH}:${PERL_EXE_PATH}")
-=======
 	set(BASH /bin/bash)
 	set(ENV{PATH} "${MSYS_ROOT}/usr/bin:$ENV{PATH}:${PERL_EXE_PATH}")
->>>>>>> .theirs
 endif()
 
 include(${CURRENT_INSTALLED_DIR}/share/yasm-tool-helper/yasm-tool-helper.cmake)
