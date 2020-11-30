@@ -43,6 +43,10 @@ if (ENABLE_MINIMAL)
     set(SODIUM_LIBRARY_MINIMAL_DEF "#define SODIUM_LIBRARY_MINIMAL 1")
 endif ()
 
+if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "AMD64" OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86")
+    set(HAS_X86_FAMILY_CPU TRUE)
+endif()
+
 configure_file(
     src/libsodium/include/sodium/version.h.in
     ${CMAKE_BINARY_DIR}/sodium/version.h
@@ -355,39 +359,41 @@ else ()
         endif ()
     endif ()
 
-    check_c_source_runs(
-        "
-        #ifdef __native_client__
-        # error NativeClient detected - Avoiding AVX512F opcodes
-        #endif
-        #pragma GCC target(\"avx512f\")
-        #include <immintrin.h>
+    if (HAS_X86_FAMILY_CPU)
+        check_c_source_runs(
+            "
+            #ifdef __native_client__
+            # error NativeClient detected - Avoiding AVX512F opcodes
+            #endif
+            #pragma GCC target(\"avx512f\")
+            #include <immintrin.h>
         
-        #ifndef __AVX512F__
-        # error No AVX512 support
-        #elif defined(__clang__)
-        # if __clang_major__ < 4
-        #  error Compiler AVX512 support may be broken
-        # endif
-        #elif defined(__GNUC__)
-        # if __GNUC__ < 6
-        #  error Compiler AVX512 support may be broken
-        # endif
-        #endif
+            #ifndef __AVX512F__
+            # error No AVX512 support
+            #elif defined(__clang__)
+            # if __clang_major__ < 4
+            #  error Compiler AVX512 support may be broken
+            # endif
+            #elif defined(__GNUC__)
+            # if __GNUC__ < 6
+            #  error Compiler AVX512 support may be broken
+            # endif
+            #endif
  
-        int main(void) {
-          __m512i x = _mm512_setzero_epi32();
-          __m512i y = _mm512_permutexvar_epi64(_mm512_setr_epi64(0, 1, 4, 5, 2, 3, 6, 7), x);
-        }
-        "
-        HAVE_AVX512FINTRIN_H
-    )
+            int main(void) {
+            __m512i x = _mm512_setzero_epi32();
+            __m512i y = _mm512_permutexvar_epi64(_mm512_setr_epi64(0, 1, 4, 5, 2, 3, 6, 7), x);
+            }
+            "
+            HAVE_AVX512FINTRIN_H
+        )
 
-    if (HAVE_AVX512FINTRIN_H)
-        target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_AVX512FINTRIN_H=1)
-        target_compile_options(${PROJECT_NAME} PRIVATE -mavx512f)
-    else ()
-        target_compile_options(${PROJECT_NAME} PRIVATE -mno-avx512f)
+        if (HAVE_AVX512FINTRIN_H)
+            target_compile_definitions(${PROJECT_NAME} PRIVATE HAVE_AVX512FINTRIN_H=1)
+            target_compile_options(${PROJECT_NAME} PRIVATE -mavx512f)
+        else ()
+            target_compile_options(${PROJECT_NAME} PRIVATE -mno-avx512f)
+        endif ()
     endif ()
 
     check_c_source_runs(
