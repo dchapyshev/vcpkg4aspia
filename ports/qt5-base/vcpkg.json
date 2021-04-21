@@ -1,0 +1,37 @@
+{
+  "name": "qt5-base",
+  "version-semver": "5.15.2",
+  "port-version": 6,
+  "description": "Qt5 Application Framework Base Module. Includes Core, GUI, Widgets, Networking, SQL, Concurrent and other essential qt components.",
+  "homepage": "https://www.qt.io/",
+  "dependencies": [
+    {
+      "name": "angle",
+      "platform": "!windows"
+    },
+    "double-conversion",
+    "egl-registry",
+    {
+      "name": "fontconfig",
+      "platform": "!windows"
+    },
+    "freetype",
+    "harfbuzz",
+    "libjpeg-turbo",
+    "libpng",
+    "openssl",
+    "pcre2",
+    "sqlite3",
+    {
+      "name": "vcpkg-pkgconfig-get-modules",
+      "host": true
+    },
+    "zlib",
+    "zstd"
+  ],
+  "features": {
+    "latest": {
+      "description": "Build latest qt version (5.15.2) instead of LTS (latest and LTS are currently the same)"
+    }
+  }
+}
