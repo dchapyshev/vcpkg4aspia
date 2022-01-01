@@ -255,9 +255,9 @@ if(VCPKG_TARGET_IS_WINDOWS)
         list(APPEND CORE_OPTIONS -appstore-compliant)
     endif()
     if(NOT ${VCPKG_LIBRARY_LINKAGE} STREQUAL "static")
-        list(APPEND CORE_OPTIONS -no-dbus -no-opengl -no-icu) # other options are "-no-opengl", "-opengl angle", and "-opengl desktop" and "-opengel es2"
+        list(APPEND CORE_OPTIONS -no-dbus -no-opengl -no-icu -ltcg) # other options are "-no-opengl", "-opengl angle", and "-opengl desktop" and "-opengel es2"
     else()
-        list(APPEND CORE_OPTIONS -no-dbus -no-opengl -no-icu) # other possible option without moving angle dlls: "-opengl desktop". "-opengel es2" only works with commented patch 
+        list(APPEND CORE_OPTIONS -no-dbus -no-opengl -no-icu -ltcg) # other possible option without moving angle dlls: "-opengl desktop". "-opengel es2" only works with commented patch 
     endif()
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE}"
