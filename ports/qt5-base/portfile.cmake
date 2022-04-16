@@ -94,7 +94,7 @@ set(ENV{_CL_} "/utf-8")
 set(CORE_OPTIONS
     -confirm-license
     -opensource
-    #-ltcg
+    -ltcg
     -verbose
 )
 
@@ -111,7 +111,21 @@ list(APPEND CORE_OPTIONS
     -no-angle
     -no-glib
     -no-libjpeg
-    )
+    -no-feature-concurrent
+    -no-feature-dtls
+    -no-feature-lcdnumber
+    -no-feature-movie
+    -no-feature-networkdiskcache
+    -no-feature-textodfwriter
+    -no-feature-future
+    -no-feature-ftp
+    -no-feature-sharedmemory
+    -no-feature-splashscreen
+    -no-feature-udpsocket
+    -no-feature-textmarkdownreader
+    -no-feature-textmarkdownwriter
+    -no-feature-imageformat_jpeg
+)
 
 if(QT_OPENSSL_LINK)
     list(APPEND CORE_OPTIONS -openssl-linked)
@@ -154,9 +168,6 @@ find_library(EAY_DEBUG libeay32 crypto libcrypto libeay32d cryptod libcryptod PA
 set(FREETYPE_RELEASE_ALL "${FREETYPE_RELEASE} ${BZ2_RELEASE} ${LIBPNG_RELEASE} ${ZLIB_RELEASE} ${BROTLI_DEC_RELEASE} ${BROTLI_COMMON_RELEASE}")
 set(FREETYPE_DEBUG_ALL "${FREETYPE_DEBUG} ${BZ2_DEBUG} ${LIBPNG_DEBUG} ${ZLIB_DEBUG} ${BROTLI_DEC_DEBUG} ${BROTLI_COMMON_DEBUG}")
 
-# If HarfBuzz is built with GLib enabled, it must be statically link
-x_vcpkg_pkgconfig_get_modules(PREFIX harfbuzz MODULES harfbuzz LIBRARIES)
-
 set(RELEASE_OPTIONS
             "ZLIB_LIBS=${ZLIB_RELEASE}"
             "LIBPNG_LIBS=${LIBPNG_RELEASE} ${ZLIB_RELEASE}"
@@ -178,9 +189,9 @@ set(DEBUG_OPTIONS
 
 if(VCPKG_TARGET_IS_WINDOWS)
     if(NOT ${VCPKG_LIBRARY_LINKAGE} STREQUAL "static")
-        list(APPEND CORE_OPTIONS -no-opengl)
+        list(APPEND CORE_OPTIONS -no-opengl -no-dbus)
     else()
-        list(APPEND CORE_OPTIONS -no-opengl)
+        list(APPEND CORE_OPTIONS -no-opengl -no-dbus)
     endif()
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE}"
