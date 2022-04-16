@@ -36,19 +36,6 @@ else()
     )
 endif()
 
-set(WITH_PGSQL_PLUGIN OFF)
-if("postgresqlplugin" IN_LIST FEATURES)
-    set(WITH_PGSQL_PLUGIN ON)
-endif()
-
-set(WITH_MYSQL_PLUGIN OFF)
-if ("mysqlplugin" IN_LIST FEATURES)
-    set(WITH_MYSQL_PLUGIN  ON)
-endif()
-if(WITH_MYSQL_PLUGIN AND NOT VCPKG_TARGET_IS_WINDOWS)
-    message(WARNING "${PORT} is currently not setup to support feature 'mysqlplugin' on platforms other than windows. Feel free to open up a PR to fix it!")
-endif()
-
 include(qt_port_functions)
 include(configure_qt)
 include(install_qt)
@@ -91,7 +78,7 @@ qt_download_submodule(  OUT_SOURCE_PATH SOURCE_PATH
                     )
 
 # Remove vendored dependencies to ensure they are not picked up by the build
-foreach(DEPENDENCY zlib freetype harfbuzz-ng libjpeg libpng double-conversion sqlite pcre2)
+foreach(DEPENDENCY zlib freetype libjpeg libpng double-conversion sqlite pcre2)
     if(EXISTS ${SOURCE_PATH}/src/3rdparty/${DEPENDENCY})
         file(REMOVE_RECURSE ${SOURCE_PATH}/src/3rdparty/${DEPENDENCY})
     endif()
@@ -107,68 +94,33 @@ set(ENV{_CL_} "/utf-8")
 set(CORE_OPTIONS
     -confirm-license
     -opensource
-    #-simulator_and_device
     #-ltcg
-    #-combined-angle-lib
-    # ENV ANGLE_DIR to external angle source dir. (Will always be compiled with Qt)
-    #-optimized-tools
-    #-force-debug-info
     -verbose
 )
 
 ## 3rd Party Libs
 list(APPEND CORE_OPTIONS
     -system-zlib
-    -system-libjpeg
     -system-libpng
     -system-freetype
     -system-pcre
     -system-doubleconversion
     -system-sqlite
-    -system-harfbuzz
-    -icu
-    -no-angle # Qt does not need to build angle. VCPKG will build angle!
+    -qt-harfbuzz
+    -no-icu
+    -no-angle
     -no-glib
+    -no-libjpeg
     )
 
 if(QT_OPENSSL_LINK)
     list(APPEND CORE_OPTIONS -openssl-linked)
 endif()
 
-if(WITH_PGSQL_PLUGIN)
-    list(APPEND CORE_OPTIONS -sql-psql)
-else()
-    list(APPEND CORE_OPTIONS -no-sql-psql)
-endif()
-if(WITH_MYSQL_PLUGIN)
-    list(APPEND CORE_OPTIONS -sql-mysql)
-else()
-    list(APPEND CORE_OPTIONS -no-sql-mysql)
-endif()
-
-if ("vulkan" IN_LIST FEATURES)
-    list(APPEND CORE_OPTIONS --vulkan=yes)
-else()
-    list(APPEND CORE_OPTIONS --vulkan=no)
-endif()
-
 find_library(ZLIB_RELEASE NAMES z zlib PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(ZLIB_DEBUG NAMES z zlib zd zlibd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(JPEG_RELEASE NAMES jpeg jpeg-static PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(JPEG_DEBUG NAMES jpeg jpeg-static jpegd jpeg-staticd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 find_library(LIBPNG_RELEASE NAMES png16 libpng16 PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) #Depends on zlib
 find_library(LIBPNG_DEBUG NAMES png16 png16d libpng16 libpng16d PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(PSQL_RELEASE NAMES pq libpq PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
-find_library(PSQL_DEBUG NAMES pq libpq pqd libpqd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
-if(NOT (PSQL_RELEASE MATCHES ".*\.so") AND NOT (PSQL_DEBUG MATCHES ".*\.so"))
-    find_library(PSQL_COMMON_RELEASE NAMES pgcommon libpgcommon PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
-    find_library(PSQL_COMMON_DEBUG NAMES pgcommon libpgcommon pgcommond libpgcommond PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-    find_library(PSQL_PORT_RELEASE NAMES pgport libpgport PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
-    find_library(PSQL_PORT_DEBUG NAMES pgport libpgport pgportd libpgportd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-endif()
-find_library(MYSQL_RELEASE NAMES libmysql mysqlclient PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
-find_library(MYSQL_DEBUG NAMES libmysql libmysqld mysqlclient mysqlclientd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 
 find_library(PCRE2_RELEASE NAMES pcre2-16 pcre2-16-static PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(PCRE2_DEBUG NAMES pcre2-16 pcre2-16-static pcre2-16d pcre2-16-staticd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
@@ -176,8 +128,6 @@ find_library(FREETYPE_RELEASE NAMES freetype PATHS "${CURRENT_INSTALLED_DIR}/lib
 find_library(FREETYPE_DEBUG NAMES freetype freetyped PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 find_library(DOUBLECONVERSION_RELEASE NAMES double-conversion PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(DOUBLECONVERSION_DEBUG NAMES double-conversion PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(HARFBUZZ_RELEASE NAMES harfbuzz PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(HARFBUZZ_DEBUG NAMES harfbuzz PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 find_library(SQLITE_RELEASE NAMES sqlite3 PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
 find_library(SQLITE_DEBUG NAMES sqlite3 sqlite3d PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 
@@ -185,28 +135,6 @@ find_library(BROTLI_COMMON_RELEASE NAMES brotlicommon brotlicommon-static PATHS 
 find_library(BROTLI_COMMON_DEBUG NAMES brotlicommon brotlicommon-static brotlicommond brotlicommon-staticd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 find_library(BROTLI_DEC_RELEASE NAMES brotlidec brotlidec-static PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(BROTLI_DEC_DEBUG NAMES brotlidec brotlidec-static brotlidecd brotlidec-staticd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
-find_library(ICUUC_RELEASE NAMES icuuc libicuuc PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(ICUUC_DEBUG NAMES icuucd libicuucd icuuc libicuuc PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(ICUTU_RELEASE NAMES icutu libicutu PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(ICUTU_DEBUG NAMES icutud libicutud icutu libicutu PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
-# Was installed in WSL but not on CI machine
-#    find_library(ICULX_RELEASE NAMES iculx libiculx PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-#    find_library(ICULX_DEBUG NAMES iculxd libiculxd iculx libiculx PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
-find_library(ICUIO_RELEASE NAMES icuio libicuio PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(ICUIO_DEBUG NAMES icuiod libicuiod icuio libicuio PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(ICUIN_RELEASE NAMES icui18n libicui18n icuin PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(ICUIN_DEBUG NAMES icui18nd libicui18nd icui18n libicui18n icuin icuind PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(ICUDATA_RELEASE NAMES icudata libicudata icudt PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(ICUDATA_DEBUG NAMES icudatad libicudatad icudata libicudata icudtd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-set(ICU_RELEASE "${ICUIN_RELEASE} ${ICUTU_RELEASE} ${ICULX_RELEASE} ${ICUUC_RELEASE} ${ICUIO_RELEASE} ${ICUDATA_RELEASE}")
-set(ICU_DEBUG "${ICUIN_DEBUG} ${ICUTU_DEBUG} ${ICULX_DEBUG} ${ICUUC_DEBUG} ${ICUIO_DEBUG} ${ICUDATA_DEBUG}")
-if(VCPKG_TARGET_IS_WINDOWS)
-    set(ICU_RELEASE "${ICU_RELEASE} Advapi32.lib")
-    set(ICU_DEBUG "${ICU_DEBUG} Advapi32.lib" )
-endif()
 
 find_library(FONTCONFIG_RELEASE NAMES fontconfig PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(FONTCONFIG_DEBUG NAMES fontconfig PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
@@ -230,59 +158,39 @@ set(FREETYPE_DEBUG_ALL "${FREETYPE_DEBUG} ${BZ2_DEBUG} ${LIBPNG_DEBUG} ${ZLIB_DE
 x_vcpkg_pkgconfig_get_modules(PREFIX harfbuzz MODULES harfbuzz LIBRARIES)
 
 set(RELEASE_OPTIONS
-            "LIBJPEG_LIBS=${JPEG_RELEASE}"
             "ZLIB_LIBS=${ZLIB_RELEASE}"
             "LIBPNG_LIBS=${LIBPNG_RELEASE} ${ZLIB_RELEASE}"
             "PCRE2_LIBS=${PCRE2_RELEASE}"
             "FREETYPE_LIBS=${FREETYPE_RELEASE_ALL}"
-            "ICU_LIBS=${ICU_RELEASE}"
             "QMAKE_LIBS_PRIVATE+=${BZ2_RELEASE}"
             "QMAKE_LIBS_PRIVATE+=${LIBPNG_RELEASE}"
-            "QMAKE_LIBS_PRIVATE+=${ICU_RELEASE}"
             "QMAKE_LIBS_PRIVATE+=${ZSTD_RELEASE}"
             )
 set(DEBUG_OPTIONS
-            "LIBJPEG_LIBS=${JPEG_DEBUG}"
             "ZLIB_LIBS=${ZLIB_DEBUG}"
             "LIBPNG_LIBS=${LIBPNG_DEBUG} ${ZLIB_DEBUG}"
             "PCRE2_LIBS=${PCRE2_DEBUG}"
             "FREETYPE_LIBS=${FREETYPE_DEBUG_ALL}"
-            "ICU_LIBS=${ICU_DEBUG}"
             "QMAKE_LIBS_PRIVATE+=${BZ2_DEBUG}"
             "QMAKE_LIBS_PRIVATE+=${LIBPNG_DEBUG}"
-            "QMAKE_LIBS_PRIVATE+=${ICU_DEBUG}"
             "QMAKE_LIBS_PRIVATE+=${ZSTD_DEBUG}"
             )
 
 if(VCPKG_TARGET_IS_WINDOWS)
-    if(VCPKG_TARGET_IS_UWP)
-        list(APPEND CORE_OPTIONS -appstore-compliant)
-    endif()
     if(NOT ${VCPKG_LIBRARY_LINKAGE} STREQUAL "static")
-        list(APPEND CORE_OPTIONS -opengl dynamic) # other options are "-no-opengl", "-opengl angle", and "-opengl desktop" and "-opengel es2"
+        list(APPEND CORE_OPTIONS -no-opengl)
     else()
-        list(APPEND CORE_OPTIONS -opengl dynamic) # other possible option without moving angle dlls: "-opengl desktop". "-opengel es2" only works with commented patch
+        list(APPEND CORE_OPTIONS -no-opengl)
     endif()
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE}"
-            "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_RELEASE}"
             "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} ws2_32.lib secur32.lib advapi32.lib shell32.lib crypt32.lib user32.lib gdi32.lib"
         )
 
     list(APPEND DEBUG_OPTIONS
             "SQLITE_LIBS=${SQLITE_DEBUG}"
-            "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_DEBUG}"
             "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} ws2_32.lib secur32.lib advapi32.lib shell32.lib crypt32.lib user32.lib gdi32.lib"
         )
-    if(WITH_PGSQL_PLUGIN)
-        list(APPEND RELEASE_OPTIONS "PSQL_LIBS=${PSQL_RELEASE} ${PSQL_PORT_RELEASE} ${PSQL_COMMON_RELEASE} ${SSL_RELEASE} ${EAY_RELEASE} ws2_32.lib secur32.lib advapi32.lib shell32.lib crypt32.lib user32.lib gdi32.lib")
-        list(APPEND DEBUG_OPTIONS "PSQL_LIBS=${PSQL_DEBUG} ${PSQL_PORT_DEBUG} ${PSQL_COMMON_DEBUG} ${SSL_DEBUG} ${EAY_DEBUG} ws2_32.lib secur32.lib advapi32.lib shell32.lib crypt32.lib user32.lib gdi32.lib")
-    endif()
-    if (WITH_MYSQL_PLUGIN)
-        list(APPEND RELEASE_OPTIONS "MYSQL_LIBS=${MYSQL_RELEASE}")
-        list(APPEND DEBUG_OPTIONS "MYSQL_LIBS=${MYSQL_DEBUG}")
-    endif(WITH_MYSQL_PLUGIN)
-
 elseif(VCPKG_TARGET_IS_LINUX)
     list(APPEND CORE_OPTIONS -fontconfig -xcb-xlib -xcb -linuxfb)
     if (NOT EXISTS "/usr/include/GL/glu.h")
@@ -290,20 +198,14 @@ elseif(VCPKG_TARGET_IS_LINUX)
     endif()
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
-            "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_RELEASE}"
             "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread"
             "FONTCONFIG_LIBS=${FONTCONFIG_RELEASE} ${FREETYPE_RELEASE} ${EXPAT_RELEASE} -luuid"
         )
     list(APPEND DEBUG_OPTIONS
             "SQLITE_LIBS=${SQLITE_DEBUG} -ldl -lpthread"
-            "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_DEBUG}"
             "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread"
             "FONTCONFIG_LIBS=${FONTCONFIG_DEBUG} ${FREETYPE_DEBUG} ${EXPAT_DEBUG} -luuid"
         )
-    if(WITH_PGSQL_PLUGIN)
-        list(APPEND RELEASE_OPTIONS "PSQL_LIBS=${PSQL_RELEASE} ${PSQL_PORT_RELEASE} ${PSQL_TYPES_RELEASE} ${PSQL_COMMON_RELEASE} ${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread")
-        list(APPEND DEBUG_OPTIONS "PSQL_LIBS=${PSQL_DEBUG} ${PSQL_PORT_DEBUG} ${PSQL_TYPES_DEBUG} ${PSQL_COMMON_DEBUG} ${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread")
-    endif()
 elseif(VCPKG_TARGET_IS_OSX)
     list(APPEND CORE_OPTIONS -fontconfig)
     if("${VCPKG_TARGET_ARCHITECTURE}" MATCHES "arm64")
@@ -344,21 +246,14 @@ elseif(VCPKG_TARGET_IS_OSX)
     #list(APPEND QT_PLATFORM_CONFIGURE_OPTIONS HOST_PLATFORM ${TARGET_MKSPEC})
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
-            "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_RELEASE} -framework ApplicationServices"
             "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread"
             "FONTCONFIG_LIBS=${FONTCONFIG_RELEASE} ${FREETYPE_RELEASE} ${EXPAT_RELEASE} -liconv"
         )
     list(APPEND DEBUG_OPTIONS
             "SQLITE_LIBS=${SQLITE_DEBUG} -ldl -lpthread"
-            "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_DEBUG} -framework ApplicationServices"
             "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread"
             "FONTCONFIG_LIBS=${FONTCONFIG_DEBUG} ${FREETYPE_DEBUG} ${EXPAT_DEBUG} -liconv"
         )
-
-    if(WITH_PGSQL_PLUGIN)
-        list(APPEND RELEASE_OPTIONS "PSQL_LIBS=${PSQL_RELEASE} ${PSQL_PORT_RELEASE} ${PSQL_TYPES_RELEASE} ${PSQL_COMMON_RELEASE} ${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread")
-        list(APPEND DEBUG_OPTIONS "PSQL_LIBS=${PSQL_DEBUG} ${PSQL_PORT_DEBUG} ${PSQL_TYPES_DEBUG} ${PSQL_COMMON_DEBUG} ${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread")
-    endif()
 endif()
 
 ## Do not build tests or examples
@@ -514,19 +409,3 @@ if(VCPKG_TARGET_IS_OSX)
         file(WRITE "${_new_filename}" "Name: ${_name}\nDescription: Forwarding to the _debug version by vcpkg\n${_version}\nRequires: ${_name}_debug\n")
     endforeach()
 endif()
-# #Code to get generated CMake files from CI
-# file(RENAME "${CURRENT_PACKAGES_DIR}/share/cmake/Qt5Core/Qt5CoreConfig.cmake" "${CURRENT_BUILDTREES_DIR}/Qt5CoreConfig.cmake.log")
-# file(GLOB_RECURSE CMAKE_GUI_FILES "${CURRENT_PACKAGES_DIR}/share/cmake/Qt5Gui/*.cmake" )
-# foreach(cmake_file ${CMAKE_GUI_FILES})
-    # get_filename_component(cmake_filename "${cmake_file}" NAME)
-    # file(COPY "${cmake_file}" DESTINATION "${CURRENT_BUILDTREES_DIR}")
-    # file(RENAME "${CURRENT_BUILDTREES_DIR}/${cmake_filename}" "${CURRENT_BUILDTREES_DIR}/${cmake_filename}.log")
-# endforeach()
-# #Copy config.log from buildtree/triplet to buildtree to get the log in CI in case of failure
-# if(EXISTS "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/config.log")
-    # file(RENAME "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/config.log" "${CURRENT_BUILDTREES_DIR}/config-rel.log")
-# endif()
-# if(EXISTS "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-dbg/config.log")
-    # file(RENAME "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-dbg/config.log" "${CURRENT_BUILDTREES_DIR}/config-dbg.log")
-# endif()
-# message(FATAL_ERROR "Need Info from CI!")
