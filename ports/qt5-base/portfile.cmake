@@ -119,14 +119,14 @@ set(CORE_OPTIONS
 ## 3rd Party Libs
 list(APPEND CORE_OPTIONS
     -system-zlib
+    -system-libjpeg
     -system-libpng
     -system-freetype
     -system-pcre
     -system-doubleconversion
     -system-sqlite
     -system-harfbuzz
-    -no-icu
-    -no-vulkan
+    -icu
     -no-angle # Qt does not need to build angle. VCPKG will build angle!
     -no-glib
     )
@@ -172,7 +172,6 @@ find_library(MYSQL_DEBUG NAMES libmysql libmysqld mysqlclient mysqlclientd PATHS
 
 find_library(PCRE2_RELEASE NAMES pcre2-16 pcre2-16-static PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(PCRE2_DEBUG NAMES pcre2-16 pcre2-16-static pcre2-16d pcre2-16-staticd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
 find_library(FREETYPE_RELEASE NAMES freetype PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) #zlib, bzip2, libpng
 find_library(FREETYPE_DEBUG NAMES freetype freetyped PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 find_library(DOUBLECONVERSION_RELEASE NAMES double-conversion PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
@@ -231,21 +230,27 @@ set(FREETYPE_DEBUG_ALL "${FREETYPE_DEBUG} ${BZ2_DEBUG} ${LIBPNG_DEBUG} ${ZLIB_DE
 x_vcpkg_pkgconfig_get_modules(PREFIX harfbuzz MODULES harfbuzz LIBRARIES)
 
 set(RELEASE_OPTIONS
-			"LIBJPEG_LIBS=${JPEG_RELEASE}"
+            "LIBJPEG_LIBS=${JPEG_RELEASE}"
             "ZLIB_LIBS=${ZLIB_RELEASE}"
             "LIBPNG_LIBS=${LIBPNG_RELEASE} ${ZLIB_RELEASE}"
             "PCRE2_LIBS=${PCRE2_RELEASE}"
+            "FREETYPE_LIBS=${FREETYPE_RELEASE_ALL}"
+            "ICU_LIBS=${ICU_RELEASE}"
             "QMAKE_LIBS_PRIVATE+=${BZ2_RELEASE}"
             "QMAKE_LIBS_PRIVATE+=${LIBPNG_RELEASE}"
+            "QMAKE_LIBS_PRIVATE+=${ICU_RELEASE}"
             "QMAKE_LIBS_PRIVATE+=${ZSTD_RELEASE}"
             )
 set(DEBUG_OPTIONS
-			"LIBJPEG_LIBS=${JPEG_DEBUG}"
+            "LIBJPEG_LIBS=${JPEG_DEBUG}"
             "ZLIB_LIBS=${ZLIB_DEBUG}"
             "LIBPNG_LIBS=${LIBPNG_DEBUG} ${ZLIB_DEBUG}"
             "PCRE2_LIBS=${PCRE2_DEBUG}"
+            "FREETYPE_LIBS=${FREETYPE_DEBUG_ALL}"
+            "ICU_LIBS=${ICU_DEBUG}"
             "QMAKE_LIBS_PRIVATE+=${BZ2_DEBUG}"
             "QMAKE_LIBS_PRIVATE+=${LIBPNG_DEBUG}"
+            "QMAKE_LIBS_PRIVATE+=${ICU_DEBUG}"
             "QMAKE_LIBS_PRIVATE+=${ZSTD_DEBUG}"
             )
 
@@ -254,21 +259,19 @@ if(VCPKG_TARGET_IS_WINDOWS)
         list(APPEND CORE_OPTIONS -appstore-compliant)
     endif()
     if(NOT ${VCPKG_LIBRARY_LINKAGE} STREQUAL "static")
-        list(APPEND CORE_OPTIONS -no-dbus -no-opengl -no-icu -ltcg) # other options are "-no-opengl", "-opengl angle", and "-opengl desktop" and "-opengel es2"
+        list(APPEND CORE_OPTIONS -opengl dynamic) # other options are "-no-opengl", "-opengl angle", and "-opengl desktop" and "-opengel es2"
     else()
-        list(APPEND CORE_OPTIONS -no-dbus -no-opengl -no-icu -ltcg) # other possible option without moving angle dlls: "-opengl desktop". "-opengel es2" only works with commented patch 
+        list(APPEND CORE_OPTIONS -opengl dynamic) # other possible option without moving angle dlls: "-opengl desktop". "-opengel es2" only works with commented patch
     endif()
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE}"
-            "FREETYPE_LIBS=${FREETYPE_RELEASE_ALL}"
-            "HARFBUZZ_LIBS=${HARFBUZZ_RELEASE} ${FREETYPE_RELEASE_ALL}"
+            "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_RELEASE}"
             "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} ws2_32.lib secur32.lib advapi32.lib shell32.lib crypt32.lib user32.lib gdi32.lib"
         )
 
     list(APPEND DEBUG_OPTIONS
             "SQLITE_LIBS=${SQLITE_DEBUG}"
-            "FREETYPE_LIBS=${FREETYPE_DEBUG_ALL}"
-            "HARFBUZZ_LIBS=${HARFBUZZ_DEBUG} ${FREETYPE_DEBUG_ALL}"
+            "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_DEBUG}"
             "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} ws2_32.lib secur32.lib advapi32.lib shell32.lib crypt32.lib user32.lib gdi32.lib"
         )
     if(WITH_PGSQL_PLUGIN)
@@ -281,28 +284,28 @@ if(VCPKG_TARGET_IS_WINDOWS)
     endif(WITH_MYSQL_PLUGIN)
 
 elseif(VCPKG_TARGET_IS_LINUX)
-    list(APPEND CORE_OPTIONS -icu -fontconfig -xcb-xlib -xcb)
+    list(APPEND CORE_OPTIONS -fontconfig -xcb-xlib -xcb -linuxfb)
     if (NOT EXISTS "/usr/include/GL/glu.h")
         message(FATAL_ERROR "qt5 requires libgl1-mesa-dev and libglu1-mesa-dev, please use your distribution's package manager to install them.\nExample: \"apt-get install libgl1-mesa-dev libglu1-mesa-dev\"")
     endif()
     list(APPEND RELEASE_OPTIONS
-            "ICU_LIBS=${ICU_RELEASE}"
             "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
             "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_RELEASE}"
             "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread"
+            "FONTCONFIG_LIBS=${FONTCONFIG_RELEASE} ${FREETYPE_RELEASE} ${EXPAT_RELEASE} -luuid"
         )
     list(APPEND DEBUG_OPTIONS
-            "ICU_LIBS=${ICU_DEBUG}"
             "SQLITE_LIBS=${SQLITE_DEBUG} -ldl -lpthread"
             "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_DEBUG}"
             "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread"
+            "FONTCONFIG_LIBS=${FONTCONFIG_DEBUG} ${FREETYPE_DEBUG} ${EXPAT_DEBUG} -luuid"
         )
     if(WITH_PGSQL_PLUGIN)
         list(APPEND RELEASE_OPTIONS "PSQL_LIBS=${PSQL_RELEASE} ${PSQL_PORT_RELEASE} ${PSQL_TYPES_RELEASE} ${PSQL_COMMON_RELEASE} ${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread")
         list(APPEND DEBUG_OPTIONS "PSQL_LIBS=${PSQL_DEBUG} ${PSQL_PORT_DEBUG} ${PSQL_TYPES_DEBUG} ${PSQL_COMMON_DEBUG} ${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread")
     endif()
 elseif(VCPKG_TARGET_IS_OSX)
-    list(APPEND CORE_OPTIONS -icu -fontconfig)
+    list(APPEND CORE_OPTIONS -fontconfig)
     if("${VCPKG_TARGET_ARCHITECTURE}" MATCHES "arm64")
         FILE(READ "${SOURCE_PATH}/mkspecs/common/macx.conf" _tmp_contents)
         string(REPLACE "QMAKE_APPLE_DEVICE_ARCHS = x86_64" "QMAKE_APPLE_DEVICE_ARCHS = arm64" _tmp_contents ${_tmp_contents})
@@ -340,17 +343,13 @@ elseif(VCPKG_TARGET_IS_OSX)
     endif()
     #list(APPEND QT_PLATFORM_CONFIGURE_OPTIONS HOST_PLATFORM ${TARGET_MKSPEC})
     list(APPEND RELEASE_OPTIONS
-            "ICU_LIBS=${ICU_RELEASE}"
             "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
-            "FREETYPE_LIBS=${FREETYPE_RELEASE_ALL}"
             "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_RELEASE} -framework ApplicationServices"
             "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread"
             "FONTCONFIG_LIBS=${FONTCONFIG_RELEASE} ${FREETYPE_RELEASE} ${EXPAT_RELEASE} -liconv"
         )
     list(APPEND DEBUG_OPTIONS
-            "ICU_LIBS=${ICU_DEBUG}"
             "SQLITE_LIBS=${SQLITE_DEBUG} -ldl -lpthread"
-            "FREETYPE_LIBS=${FREETYPE_DEBUG_ALL}"
             "HARFBUZZ_LIBS=${harfbuzz_LIBRARIES_DEBUG} -framework ApplicationServices"
             "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread"
             "FONTCONFIG_LIBS=${FONTCONFIG_DEBUG} ${FREETYPE_DEBUG} ${EXPAT_DEBUG} -liconv"

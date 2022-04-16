@@ -18,6 +18,10 @@
     },
     "freetype",
     "harfbuzz",
+    {
+      "name": "icu",
+      "platform": "!uwp"
+    },
     "libjpeg-turbo",
     "libpng",
     "openssl",
@@ -38,6 +42,24 @@
   "features": {
     "latest": {
       "description": "Build latest qt version (5.15.2) instead of LTS (latest and LTS are currently the same)"
+    },
+    "mysqlplugin": {
+      "description": "Build the sql plugin for connecting to mysql databases",
+      "dependencies": [
+        "libmysql"
+      ]
+    },
+    "postgresqlplugin": {
+      "description": "Build the sql plugin for connecting to postgresql databases",
+      "dependencies": [
+        "libpq"
+      ]
+    },
+    "vulkan": {
+      "description": "Enable Vulkan support in QtGui",
+      "dependencies": [
+        "vulkan"
+      ]
     }
   }
 }
