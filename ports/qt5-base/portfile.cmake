@@ -125,6 +125,16 @@ list(APPEND CORE_OPTIONS
     -no-feature-textmarkdownreader
     -no-feature-textmarkdownwriter
     -no-feature-imageformat_jpeg
+    -no-feature-gestures
+    -no-feature-sessionmanager
+    -no-feature-statemachine
+    -no-sql-sqlite2
+    -no-sql-psql
+    -no-sql-mysql
+    -no-sql-odbc
+    -no-sql-oci
+    -no-sql-ibase
+    -no-sql-db2
 )
 
 if(QT_OPENSSL_LINK)
