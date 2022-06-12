@@ -15,18 +15,11 @@
     }
   ],
   "default-features": [
-    "brotli",
     "bzip2",
     "png",
     "zlib"
   ],
   "features": {
-    "brotli": {
-      "description": "Support decompression of WOFF2 streams",
-      "dependencies": [
-        "brotli"
-      ]
-    },
     "bzip2": {
       "description": "Support bzip2 compressed fonts.",
       "dependencies": [
