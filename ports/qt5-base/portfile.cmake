@@ -1,12 +1,5 @@
 vcpkg_buildpath_length_warning(37)
 
-if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
-    set(QT_OPENSSL_LINK_DEFAULT ON)
-else()
-    set(QT_OPENSSL_LINK_DEFAULT OFF)
-endif()
-option(QT_OPENSSL_LINK "Link against OpenSSL at compile-time." ${QT_OPENSSL_LINK_DEFAULT})
-
 if (VCPKG_TARGET_IS_LINUX)
     message(WARNING "qt5-base currently requires some packages from the system package manager, see https://doc.qt.io/qt-5/linux-requirements.html")
     message(WARNING 
@@ -76,7 +69,6 @@ qt_download_submodule(  OUT_SOURCE_PATH SOURCE_PATH
                             patches/Qt5PluginTarget.patch
                             patches/create_cmake.patch
                             patches/Qt5GuiConfigExtras.patch   # Patches the library search behavior for EGL since angle is not build with Qt
-                            patches/limits_include.patch       # Add missing includes to build with gcc 11
                     )
 
 # Remove vendored dependencies to ensure they are not picked up by the build
@@ -89,9 +81,6 @@ endforeach()
 
 #########################
 ## Setup Configure options
-
-# This fixes issues on machines with default codepages that are not ASCII compatible, such as some CJK encodings
-set(ENV{_CL_} "/utf-8")
 
 set(CORE_OPTIONS
     -confirm-license
