@@ -4,9 +4,9 @@
 #  - The release tarball contains pre-generated parser sources, which eliminates the dependency on bison/flex.
 
 vcpkg_download_distfile(ARCHIVE
-    URLS "https://github.com/igraph/igraph/releases/download/0.9.10/igraph-0.9.10.tar.gz"
-    FILENAME "igraph-0.9.10.tar.gz"
-    SHA512 e5306b4e546ce5e7854cb87d6e2c0b4250976ccdfdd3c81e8834a92432f6e3771215ceb7da74ce460c7bdbc191c3bbadd775de7b0d80e7daef3802741be81fb3
+    URLS "https://github.com/igraph/igraph/releases/download/0.10.2/igraph-0.10.2.tar.gz"
+    FILENAME "igraph-0.10.2.tar.gz"
+    SHA512 28b0d53b846af070e1512663a55ed9c8ff57bf57d1c1b548e1970f365e16f771fc0dad3c55717be9fe0c0948aa930fa12d0e1aac1398800e9e43215c128de17f
 )
 
 vcpkg_extract_source_archive_ex(
@@ -40,7 +40,6 @@ vcpkg_cmake_configure(
         -DIGRAPH_ENABLE_LTO=AUTO
         # ARPACK not yet available in vcpkg.
         -DIGRAPH_USE_INTERNAL_ARPACK=ON
-        -DIGRAPH_USE_INTERNAL_CXSPARSE=OFF
         # GLPK is not yet available in vcpkg.
         -DIGRAPH_USE_INTERNAL_GLPK=ON
         # Currently, external GMP provides no performance or functionality benefits.
