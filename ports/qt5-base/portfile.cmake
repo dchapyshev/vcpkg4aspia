@@ -9,6 +9,8 @@ qt5-base for qt5-x11extras requires several libraries from the system package ma
   for a complete list of them.
 ]]
     )
+elseif(VCPKG_TARGET_IS_MINGW AND CMAKE_HOST_WIN32)
+    find_program(MINGW32_MAKE mingw32-make PATHS ENV PATH NO_DEFAULT_PATH REQUIRED)
 endif()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR})
@@ -55,7 +57,6 @@ qt_download_submodule(  OUT_SOURCE_PATH SOURCE_PATH
                             patches/windows_prf.patch          #fixes the qtmain dependency due to the above move
                             patches/qt_app.patch               #Moves the target location of qt5 host apps to always install into the host dir.
                             patches/gui_configure.patch        #Patches the gui configure.json to break freetype/fontconfig autodetection because it does not include its dependencies.
-                            patches/icu.patch                  #Help configure find static icu builds in vcpkg on windows
                             patches/xlib.patch                 #Patches Xlib check to actually use Pkgconfig instead of makeSpec only
                             patches/egl.patch                  #Fix egl detection logic.
                             patches/mysql_plugin_include.patch #Fix include path of mysql plugin
@@ -70,6 +71,7 @@ qt_download_submodule(  OUT_SOURCE_PATH SOURCE_PATH
                             patches/create_cmake.patch
                             patches/Qt5GuiConfigExtras.patch   # Patches the library search behavior for EGL since angle is not build with Qt
                             patches/fix_angle.patch            # Failed to create OpenGL context for format QSurfaceFormat ...
+                            patches/mingw9.patch               # Fix compile with MinGW-W64 9.0.0: Redefinition of 'struct _FILE_ID_INFO'
                     )
 
 # Remove vendored dependencies to ensure they are not picked up by the build
@@ -214,32 +216,49 @@ elseif(VCPKG_TARGET_IS_OSX)
         set(ENV{QMAKE_MACOSX_DEPLOYMENT_TARGET} ${VCPKG_OSX_DEPLOYMENT_TARGET})
     else()
         execute_process(COMMAND xcrun --show-sdk-version
-                            OUTPUT_FILE OSX_SDK_VER.txt
-                            WORKING_DIRECTORY ${CURRENT_BUILDTREES_DIR})
-        FILE(STRINGS "${CURRENT_BUILDTREES_DIR}/OSX_SDK_VER.txt" OSX_SDK_VERSION REGEX "^[0-9][0-9]\.[0-9][0-9]*")
+                OUTPUT_VARIABLE OSX_SDK_VERSION
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
         message(STATUS "Detected OSX SDK Version: ${OSX_SDK_VERSION}")
-        string(REGEX MATCH "^[0-9][0-9]\.[0-9][0-9]*" OSX_SDK_VERSION ${OSX_SDK_VERSION})
+        string(REGEX MATCH "^([0-9]+)\\.([0-9]+)" OSX_SDK_VERSION "${OSX_SDK_VERSION}")
         message(STATUS "Major.Minor OSX SDK Version: ${OSX_SDK_VERSION}")
 
         execute_process(COMMAND sw_vers -productVersion
-                            OUTPUT_FILE OSX_SYS_VER.txt
-                            WORKING_DIRECTORY ${CURRENT_BUILDTREES_DIR})
-        FILE(STRINGS "${CURRENT_BUILDTREES_DIR}/OSX_SYS_VER.txt" VCPKG_OSX_DEPLOYMENT_TARGET REGEX "^[0-9][0-9]\.[0-9][0-9]*")
+                OUTPUT_VARIABLE VCPKG_OSX_DEPLOYMENT_TARGET
+                OUTPUT_STRIP_TRAILING_WHITESPACE)
         message(STATUS "Detected OSX system Version: ${VCPKG_OSX_DEPLOYMENT_TARGET}")
-        string(REGEX MATCH "^[0-9][0-9]\.[0-9][0-9]*" VCPKG_OSX_DEPLOYMENT_TARGET ${VCPKG_OSX_DEPLOYMENT_TARGET})
+        string(REGEX MATCH "^([0-9]+)\\.([0-9]+)" VCPKG_OSX_DEPLOYMENT_TARGET "${VCPKG_OSX_DEPLOYMENT_TARGET}")
         message(STATUS "Major.Minor OSX system Version: ${VCPKG_OSX_DEPLOYMENT_TARGET}")
 
-        set(ENV{QMAKE_MACOSX_DEPLOYMENT_TARGET} ${VCPKG_OSX_DEPLOYMENT_TARGET})
-        if(${VCPKG_OSX_DEPLOYMENT_TARGET} GREATER "10.15") # Max Version supported by QT. This version is defined in mkspecs/common/macx.conf as QT_MAC_SDK_VERSION_MAX
-            message(STATUS "Qt ${QT_MAJOR_MINOR_VER}.${QT_PATCH_VER} only support OSX_DEPLOYMENT_TARGET up to 10.15")
-            set(VCPKG_OSX_DEPLOYMENT_TARGET "10.15")
+        # Parse mkspecs/common/macx.conf
+        file(READ "${SOURCE_PATH}/mkspecs/common/macx.conf" QT_MK_MAC_CONTENT)
+        string(REGEX MATCHALL "QT_MAC_SDK_VERSION_MIN[ \t]*=[ \t]*(([0-9]+)(\\.([0-9]+))*)" KEY_VALUE "${QT_MK_MAC_CONTENT}")
+        if(${CMAKE_MATCH_COUNT} LESS 2)
+            message(FATAL_ERROR "Error parse QT_MAC_SDK_VERSION_MIN")
         endif()
+        set(QT_MAC_SDK_VERSION_MIN "${CMAKE_MATCH_1}")
+        string(REGEX MATCHALL "QT_MAC_SDK_VERSION_MAX[ \t]*=[ \t]*(([0-9]+)(\\.([0-9]+))*)" KEY_VALUE "${QT_MK_MAC_CONTENT}")
+        if(${CMAKE_MATCH_COUNT} LESS 2)
+            message(FATAL_ERROR "Error parse QT_MAC_SDK_VERSION_MAX")
+        endif()
+        set(QT_MAC_SDK_VERSION_MAX "${CMAKE_MATCH_1}")
+
+        message(STATUS "QT_MAC_SDK_VERSION_MIN: ${QT_MAC_SDK_VERSION_MIN}")
+        message(STATUS "QT_MAC_SDK_VERSION_MAX: ${QT_MAC_SDK_VERSION_MAX}")
+
+        # clamp(VCPKG_OSX_DEPLOYMENT_TARGET, QT_MAC_SDK_VERSION_MIN, QT_MAC_SDK_VERSION_MAX)
+        if("${VCPKG_OSX_DEPLOYMENT_TARGET}" VERSION_GREATER "${QT_MAC_SDK_VERSION_MAX}")
+            set(VCPKG_OSX_DEPLOYMENT_TARGET "${QT_MAC_SDK_VERSION_MAX}")
+        endif()
+        if("${VCPKG_OSX_DEPLOYMENT_TARGET}" VERSION_LESS "${QT_MAC_SDK_VERSION_MIN}")
+            set(VCPKG_OSX_DEPLOYMENT_TARGET "${QT_MAC_SDK_VERSION_MIN}")
+        endif()
+
         set(ENV{QMAKE_MACOSX_DEPLOYMENT_TARGET} ${VCPKG_OSX_DEPLOYMENT_TARGET})
-        message(STATUS "Enviromnent OSX SDK Version: $ENV{QMAKE_MACOSX_DEPLOYMENT_TARGET}")
-        FILE(READ "${SOURCE_PATH}/mkspecs/common/macx.conf" _tmp_contents)
-        string(REPLACE "QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.13" "QMAKE_MACOSX_DEPLOYMENT_TARGET = ${VCPKG_OSX_DEPLOYMENT_TARGET}" _tmp_contents ${_tmp_contents})
-        FILE(WRITE "${SOURCE_PATH}/mkspecs/common/macx.conf" ${_tmp_contents})
     endif()
+    message(STATUS "Enviromnent OSX SDK Version: $ENV{QMAKE_MACOSX_DEPLOYMENT_TARGET}")
+    file(READ "${SOURCE_PATH}/mkspecs/common/macx.conf" _tmp_contents)
+    string(REPLACE "QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.13" "QMAKE_MACOSX_DEPLOYMENT_TARGET = ${VCPKG_OSX_DEPLOYMENT_TARGET}" _tmp_contents ${_tmp_contents})
+    file(WRITE "${SOURCE_PATH}/mkspecs/common/macx.conf" ${_tmp_contents})
     #list(APPEND QT_PLATFORM_CONFIGURE_OPTIONS HOST_PLATFORM ${TARGET_MKSPEC})
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
