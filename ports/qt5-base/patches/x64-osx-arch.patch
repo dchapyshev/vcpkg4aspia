@@ -1,0 +1,1739 @@
+diff --git a/mkspecs/common/gcc-base-mac.conf b/mkspecs/common/gcc-base-mac.conf
+index 30bac3dd..f77c658e 100644
+--- a/mkspecs/common/gcc-base-mac.conf
++++ b/mkspecs/common/gcc-base-mac.conf
+@@ -1,25 +1,24 @@
+-#
+-# Base qmake configuration for GCC on OS X and iOS
+-#
+-# Before making changes to this file, please read the comment in
+-# gcc-base.conf, to make sure the change goes in the right place.
+-#
+-# To verify that your change has the desired effect on the final configuration
+-# you can use the manual test in tests/manual/mkspecs.
+-#
+-
+-QMAKE_CFLAGS_PIC            = -fPIC
+-
+-include(gcc-base.conf)
+-
+-QMAKE_COMPILER_DEFINES += __APPLE__ __GNUC__=4 __APPLE_CC__
+-
+-QMAKE_LFLAGS_SHLIB         += -single_module -dynamiclib
+-QMAKE_LFLAGS_PLUGIN        += $$QMAKE_LFLAGS_SHLIB
+-QMAKE_LFLAGS_INCREMENTAL   += -undefined suppress -flat_namespace
+-QMAKE_LFLAGS_SONAME        += -install_name$${LITERAL_WHITESPACE}
+-QMAKE_LFLAGS_HEADERPAD     += -headerpad_max_install_names
+-QMAKE_LFLAGS_VERSION       += -current_version$${LITERAL_WHITESPACE}
+-QMAKE_LFLAGS_COMPAT_VERSION += -compatibility_version$${LITERAL_WHITESPACE}
+-
+-QMAKE_CFLAGS_ARCH_HASWELL = -Xarch_x86_64 $$QMAKE_CFLAGS_ARCH_HASWELL
++#
++# Base qmake configuration for GCC on OS X and iOS
++#
++# Before making changes to this file, please read the comment in
++# gcc-base.conf, to make sure the change goes in the right place.
++#
++# To verify that your change has the desired effect on the final configuration
++# you can use the manual test in tests/manual/mkspecs.
++#
++
++QMAKE_CFLAGS_PIC            = -fPIC
++
++include(gcc-base.conf)
++
++QMAKE_COMPILER_DEFINES += __APPLE__ __GNUC__=4 __APPLE_CC__
++
++QMAKE_LFLAGS_SHLIB         += -single_module -dynamiclib
++QMAKE_LFLAGS_PLUGIN        += $$QMAKE_LFLAGS_SHLIB
++QMAKE_LFLAGS_INCREMENTAL   += -undefined suppress -flat_namespace
++QMAKE_LFLAGS_SONAME        += -install_name$${LITERAL_WHITESPACE}
++QMAKE_LFLAGS_HEADERPAD     += -headerpad_max_install_names
++QMAKE_LFLAGS_VERSION       += -current_version$${LITERAL_WHITESPACE}
++QMAKE_LFLAGS_COMPAT_VERSION += -compatibility_version$${LITERAL_WHITESPACE}
++
+diff --git a/mkspecs/common/macx.conf b/mkspecs/common/macx.conf
+index 2d4ca24e..3eb6e4bb 100644
+--- a/mkspecs/common/macx.conf
++++ b/mkspecs/common/macx.conf
+@@ -1,26 +1,25 @@
+-#
+-# qmake configuration for common OS X
+-#
+-
+-QMAKE_PLATFORM         += macos osx macx
+-QMAKE_MAC_SDK           = macosx
+-
+-QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.13
+-
+-# Should be 10.15, but as long as the CI builds with
+-# older SDKs we have to keep this.
+-QT_MAC_SDK_VERSION_MIN = 10.14
+-
+-QT_MAC_SDK_VERSION_MAX = 12
+-
+-device.sdk = macosx
+-device.target = device
+-device.dir_affix = $${device.sdk}
+-device.CONFIG = $${device.sdk}
+-device.deployment_identifier = $${device.sdk}
+-
+-CONFIG += only_active_arch
+-
+-QMAKE_LIBS_VULKAN =
+-
+-include(mac.conf)
++#
++# qmake configuration for common OS X
++#
++
++QMAKE_PLATFORM         += macos osx macx
++QMAKE_MAC_SDK           = macosx
++
++QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.13
++QMAKE_APPLE_DEVICE_ARCHS = x86_64
++
++# Should be 10.15, but as long as the CI builds with
++# older SDKs we have to keep this.
++QT_MAC_SDK_VERSION_MIN = 10.14
++
++QT_MAC_SDK_VERSION_MAX = 11.0
++
++device.sdk = macosx
++device.target = device
++device.dir_affix = $${device.sdk}
++device.CONFIG = $${device.sdk}
++device.deployment_identifier = $${device.sdk}
++
++QMAKE_LIBS_VULKAN =
++
++include(mac.conf)
+diff --git a/mkspecs/features/mac/default_post.prf b/mkspecs/features/mac/default_post.prf
+index abc6d82a..0dfd6cc5 100644
+--- a/mkspecs/features/mac/default_post.prf
++++ b/mkspecs/features/mac/default_post.prf
+@@ -1,305 +1,287 @@
+-load(default_post)
+-
+-# Recompute SDK version in case the user set it explicitly
+-sdk_version = $$QMAKE_MAC_SDK_VERSION
+-QMAKE_MAC_SDK_VERSION = $$xcodeSDKInfo(SDKVersion)
+-
+-contains(TEMPLATE, .*app) {
+-    !macx-xcode:if(isEmpty(BUILDS)|build_pass) {
+-        # Detect changes to the platform SDK
+-        QMAKE_EXTRA_VARIABLES += \
+-            QMAKE_MAC_SDK \
+-            QMAKE_MAC_SDK_VERSION \
+-            QMAKE_XCODE_DEVELOPER_PATH \
+-            _QMAKE_STASH_ \
+-
+-        QMAKE_EXTRA_INCLUDES += $$shell_quote($$PWD/sdk.mk)
+-    }
+-
+-    # Detect incompatible SDK versions
+-
+-    isEmpty(QT_MAC_SDK_VERSION_MIN): \
+-        QT_MAC_SDK_VERSION_MIN = $$QT_MAC_SDK_VERSION
+-
+-    !versionAtLeast(QMAKE_MAC_SDK_VERSION, $$QT_MAC_SDK_VERSION_MIN): \
+-        warning("Qt requires at least version $$QT_MAC_SDK_VERSION_MIN of the platform SDK," \
+-              "you're building against version $${QMAKE_MAC_SDK_VERSION}. Please upgrade.")
+-
+-    !isEmpty(QT_MAC_SDK_VERSION_MAX) {
+-        # For Qt developers only
+-        !isEmpty($$list($$(QT_MAC_SDK_NO_VERSION_CHECK))): \
+-            CONFIG += sdk_no_version_check
+-
+-        QMAKE_MAC_SDK_MAJOR_VERSION = $$replace(QMAKE_MAC_SDK_VERSION, "(\\d+)(\\.\\d+)(\\.\\d+)?", \\1)
+-
+-        !sdk_no_version_check:!versionAtMost(QMAKE_MAC_SDK_MAJOR_VERSION, $$QT_MAC_SDK_VERSION_MAX) {
+-            warning("Qt has only been tested with version $$QT_MAC_SDK_VERSION_MAX"\
+-                    "of the platform SDK, you're using $${QMAKE_MAC_SDK_MAJOR_VERSION}.")
+-            warning("This is an unsupported configuration. You may experience build issues," \
+-                    "and by using")
+-            warning("the $$QMAKE_MAC_SDK_VERSION SDK you are opting in to new features" \
+-                    "that Qt has not been prepared for.")
+-
+-            warning("Please downgrade the SDK you use to build your app to version" \
+-                    "$$QT_MAC_SDK_VERSION_MAX, or configure")
+-            warning("with CONFIG+=sdk_no_version_check when running qmake" \
+-                    "to silence this warning.")
+-        }
+-    }
+-}
+-
+-!no_objective_c:CONFIG += objective_c
+-
+-qt {
+-    qtConfig(static) {
+-        # C++11 support means using libc++ instead of libstd++. As the
+-        # two libraries are incompatible we need to ensure the end user
+-        # project is built using the same C++11 support/no support as Qt.
+-        qtConfig(c++11) {
+-            CONFIG += c++11
+-        } else: c++11 {
+-            warning("Qt was not built with C++11 enabled, disabling feature")
+-            CONFIG -= c++11
+-        }
+-
+-        !c++11 {
+-            # Explicitly use libstdc++ if C++11 support is not enabled,
+-            # as otherwise the compiler will choose the standard library
+-            # based on the deployment target, which for iOS 7 and OS X 10.9
+-            # is libc++, and we can't mix and match the two.
+-            QMAKE_CXXFLAGS += -stdlib=libstdc++
+-            QMAKE_LFLAGS   += -stdlib=libstdc++
+-        }
+-    }
+-}
+-
+-# Add the same default rpaths as Xcode does for new projects.
+-# This is especially important for iOS/tvOS/watchOS where no other option is possible.
+-!no_default_rpath {
+-    uikit: QMAKE_RPATHDIR += @executable_path/Frameworks
+-    else: QMAKE_RPATHDIR += @executable_path/../Frameworks
+-    equals(TEMPLATE, lib):!plugin:lib_bundle: QMAKE_RPATHDIR += @loader_path/Frameworks
+-}
+-
+-# Don't pass -headerpad_max_install_names when using Bitcode.
+-# In that case the linker emits a warning stating that the flag is ignored when
+-# used with bitcode, for reasons that cannot be determined (rdar://problem/20748962).
+-# Using this flag is also unnecessary in practice on UIKit platforms since they
+-# are sandboxed, and only UIKit platforms support bitcode to begin with.
+-!bitcode: QMAKE_LFLAGS += $$QMAKE_LFLAGS_HEADERPAD
+-
+-app_extension_api_only {
+-    QMAKE_CFLAGS              += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
+-    QMAKE_CXXFLAGS            += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
+-    QMAKE_CXXFLAGS_PRECOMPILE += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
+-    QMAKE_LFLAGS              += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
+-}
+-
+-macos {
+-    !isEmpty(QMAKE_APPLE_DEVICE_ARCHS) {
+-        # If the user has requested a specific set of architectures,
+-        # build all of those by default, but limited to only those.
+-        CONFIG -= only_active_arch
+-    } else {
+-        # Otherwise allow building all of the architectures available
+-        # in Qt, but only build the active arch (unless the user has
+-        # manually overridden this via CONFIG -= only_active_arch).
+-        QMAKE_APPLE_DEVICE_ARCHS = $$QT_ARCHS
+-    }
+-}
+-
+-macx-xcode {
+-    qmake_pkginfo_typeinfo.name = QMAKE_PKGINFO_TYPEINFO
+-    !isEmpty(QMAKE_PKGINFO_TYPEINFO): \
+-        qmake_pkginfo_typeinfo.value = $$QMAKE_PKGINFO_TYPEINFO
+-    else: \
+-        qmake_pkginfo_typeinfo.value = "????"
+-    QMAKE_MAC_XCODE_SETTINGS += qmake_pkginfo_typeinfo
+-
+-    bundle_version = $$VERSION
+-    isEmpty(bundle_version): bundle_version = 1.0.0
+-
+-    l = $$split(bundle_version, '.') 0 0  # make sure there are at least three
+-    VER_MAJ = $$member(l, 0, 0)
+-    VER_MIN = $$member(l, 1, 1)
+-    VER_PAT = $$member(l, 2, 2)
+-    unset(l)
+-
+-    qmake_full_version.name = QMAKE_FULL_VERSION
+-    qmake_full_version.value = $${VER_MAJ}.$${VER_MIN}.$${VER_PAT}
+-    QMAKE_MAC_XCODE_SETTINGS += qmake_full_version
+-
+-    qmake_short_version.name = QMAKE_SHORT_VERSION
+-    qmake_short_version.value = $${VER_MAJ}.$${VER_MIN}
+-    QMAKE_MAC_XCODE_SETTINGS += qmake_short_version
+-
+-    !isEmpty(QMAKE_XCODE_DEBUG_INFORMATION_FORMAT) {
+-        debug_information_format.name = DEBUG_INFORMATION_FORMAT
+-        debug_information_format.value = $$QMAKE_XCODE_DEBUG_INFORMATION_FORMAT
+-        debug_information_format.build = debug
+-        QMAKE_MAC_XCODE_SETTINGS += debug_information_format
+-    }
+-
+-    QMAKE_XCODE_ARCHS =
+-
+-    arch_device.name = "ARCHS[sdk=$${device.sdk}*]"
+-    arch_device.value = $$QMAKE_APPLE_DEVICE_ARCHS
+-    QMAKE_XCODE_ARCHS += $$QMAKE_APPLE_DEVICE_ARCHS
+-    QMAKE_MAC_XCODE_SETTINGS += arch_device
+-
+-    simulator {
+-        arch_simulator.name = "ARCHS[sdk=$${simulator.sdk}*]"
+-        arch_simulator.value = $$QMAKE_APPLE_SIMULATOR_ARCHS
+-        QMAKE_XCODE_ARCHS += $$QMAKE_APPLE_SIMULATOR_ARCHS
+-        QMAKE_MAC_XCODE_SETTINGS += arch_simulator
+-    }
+-
+-    only_active_arch.name = ONLY_ACTIVE_ARCH
+-    only_active_arch.value = YES
+-    only_active_arch.build = debug
+-    QMAKE_MAC_XCODE_SETTINGS += only_active_arch
+-} else {
+-    device|!simulator: VALID_DEVICE_ARCHS = $$QMAKE_APPLE_DEVICE_ARCHS
+-    simulator: VALID_SIMULATOR_ARCHS = $$QMAKE_APPLE_SIMULATOR_ARCHS
+-    VALID_ARCHS = $$VALID_DEVICE_ARCHS $$VALID_SIMULATOR_ARCHS
+-
+-    single_arch: VALID_ARCHS = $$first(VALID_ARCHS)
+-
+-    macos {
+-        only_active_arch: DEFAULT_ARCHS = $$system("uname -m")
+-        else: DEFAULT_ARCHS = $$VALID_ARCHS
+-    }
+-
+-    ARCHS = $(filter $(EXPORT_VALID_ARCHS), \
+-        $(if $(ARCHS), $(ARCHS), \
+-            $(if $(EXPORT_DEFAULT_ARCHS), $(EXPORT_DEFAULT_ARCHS), \
+-        $(EXPORT_VALID_ARCHS))))
+-    ARCH_ARGS = $(foreach arch, $(if $(EXPORT_ARCHS), $(EXPORT_ARCHS), $(EXPORT_VALID_ARCHS)), -arch $(arch))
+-
+-    QMAKE_EXTRA_VARIABLES += VALID_ARCHS DEFAULT_ARCHS ARCHS ARCH_ARGS
+-
+-    arch_flags = $(EXPORT_ARCH_ARGS)
+-
+-    QMAKE_CFLAGS += $$arch_flags
+-    QMAKE_CXXFLAGS += $$arch_flags
+-    QMAKE_LFLAGS += $$arch_flags
+-
+-    QMAKE_PCH_ARCHS = $$VALID_ARCHS
+-
+-    macos: deployment_target = $$QMAKE_MACOSX_DEPLOYMENT_TARGET
+-    ios: deployment_target = $$QMAKE_IOS_DEPLOYMENT_TARGET
+-    tvos: deployment_target = $$QMAKE_TVOS_DEPLOYMENT_TARGET
+-    watchos: deployment_target = $$QMAKE_WATCHOS_DEPLOYMENT_TARGET
+-
+-    # If we're doing a simulator and device build, device and simulator
+-    # architectures use different paths and flags for the sysroot and
+-    # deployment target switch, so we must multiplex them across multiple
+-    # architectures using -Xarch. Otherwise we fall back to the simple path.
+-    # This is not strictly necessary, but results in cleaner command lines
+-    # and makes it easier for people to override EXPORT_VALID_ARCHS to limit
+-    # individual rules to a different set of architecture(s) from the overall
+-    # build (such as machtest in QtCore).
+-    simulator:device {
+-        QMAKE_XARCH_CFLAGS =
+-        QMAKE_XARCH_LFLAGS =
+-        QMAKE_EXTRA_VARIABLES += QMAKE_XARCH_CFLAGS QMAKE_XARCH_LFLAGS
+-
+-        for (arch, VALID_ARCHS) {
+-            contains(VALID_SIMULATOR_ARCHS, $$arch) {
+-                sdk = $$simulator.sdk
+-                version_identifier = $$simulator.deployment_identifier
+-            } else {
+-                sdk = $$device.sdk
+-                version_identifier = $$device.deployment_identifier
+-            }
+-
+-            version_min_flags = \
+-                -Xarch_$${arch} \
+-                -m$${version_identifier}-version-min=$$deployment_target
+-            QMAKE_XARCH_CFLAGS_$${arch} = $$version_min_flags \
+-                -Xarch_$${arch} \
+-                -isysroot$$xcodeSDKInfo(Path, $$sdk)
+-            QMAKE_XARCH_LFLAGS_$${arch} = $$version_min_flags \
+-                -Xarch_$${arch} \
+-                -isysroot$$xcodeSDKInfo(Path, $$sdk)
+-
+-            QMAKE_XARCH_CFLAGS += $(EXPORT_QMAKE_XARCH_CFLAGS_$${arch})
+-            QMAKE_XARCH_LFLAGS += $(EXPORT_QMAKE_XARCH_LFLAGS_$${arch})
+-
+-            QMAKE_EXTRA_VARIABLES += \
+-                QMAKE_XARCH_CFLAGS_$${arch} \
+-                QMAKE_XARCH_LFLAGS_$${arch}
+-        }
+-
+-        QMAKE_CFLAGS += $(EXPORT_QMAKE_XARCH_CFLAGS)
+-        QMAKE_CXXFLAGS += $(EXPORT_QMAKE_XARCH_CFLAGS)
+-        QMAKE_LFLAGS += $(EXPORT_QMAKE_XARCH_LFLAGS)
+-    } else {
+-        simulator {
+-            version_identifier = $$simulator.deployment_identifier
+-            sysroot_path  = $$xcodeSDKInfo(Path, $$simulator.sdk)
+-        } else {
+-            version_identifier = $$device.deployment_identifier
+-            sysroot_path  = $$xcodeSDKInfo(Path, $$device.sdk)
+-        }
+-        version_min_flag = -m$${version_identifier}-version-min=$$deployment_target
+-        QMAKE_CFLAGS += -isysroot $$sysroot_path $$version_min_flag
+-        QMAKE_CXXFLAGS += -isysroot $$sysroot_path $$version_min_flag
+-        QMAKE_LFLAGS += -isysroot $$sysroot_path $$version_min_flag
+-    }
+-
+-    # Enable precompiled headers for multiple architectures
+-    QMAKE_CFLAGS_USE_PRECOMPILE =
+-    for (arch, VALID_ARCHS) {
+-        icc_pch_style: \
+-            use_flag = "-pch-use "
+-        else: \
+-            use_flag = -include
+-
+-        # Only use Xarch with multi-arch, as the option confuses ccache
+-        count(VALID_ARCHS, 1, greaterThan): \
+-            QMAKE_CFLAGS_USE_PRECOMPILE += \
+-                -Xarch_$${arch}
+-
+-        QMAKE_CFLAGS_USE_PRECOMPILE += \
+-            $${use_flag}${QMAKE_PCH_OUTPUT_$${arch}}
+-    }
+-    icc_pch_style {
+-        QMAKE_CXXFLAGS_USE_PRECOMPILE = $$QMAKE_CFLAGS_USE_PRECOMPILE -include ${QMAKE_PCH_INPUT}
+-        QMAKE_CFLAGS_USE_PRECOMPILE =
+-    } else {
+-        QMAKE_CXXFLAGS_USE_PRECOMPILE = $$QMAKE_CFLAGS_USE_PRECOMPILE
+-        QMAKE_OBJCFLAGS_USE_PRECOMPILE = $$QMAKE_CFLAGS_USE_PRECOMPILE
+-        QMAKE_OBJCXXFLAGS_USE_PRECOMPILE = $$QMAKE_CFLAGS_USE_PRECOMPILE
+-    }
+-
+-    QMAKE_PCH_OUTPUT_EXT = _${QMAKE_PCH_ARCH}$${QMAKE_PCH_OUTPUT_EXT}
+-}
+-
+-!equals(sdk_version, $$QMAKE_MAC_SDK_VERSION) {
+-    # Explicit SDK version has been set, respect that
+-    QMAKE_LFLAGS += -Wl,-sdk_version -Wl,$$sdk_version
+-}
+-
+-cache(QMAKE_XCODE_DEVELOPER_PATH, stash)
+-!isEmpty(QMAKE_XCODE_VERSION): \
+-    cache(QMAKE_XCODE_VERSION, stash)
+-
+-QMAKE_XCODE_LIBRARY_SUFFIX = $$qtPlatformTargetSuffix()
+-
+-xcode_product_bundle_identifier_setting.name = PRODUCT_BUNDLE_IDENTIFIER
+-xcode_product_bundle_identifier_setting.value = $$QMAKE_TARGET_BUNDLE_PREFIX
+-isEmpty(xcode_product_bundle_identifier_setting.value): \
+-    xcode_product_bundle_identifier_setting.value = "com.yourcompany"
+-xcode_product_bundle_target = $$QMAKE_BUNDLE
+-isEmpty(xcode_product_bundle_target): \
+-    xcode_product_bundle_target = ${PRODUCT_NAME:rfc1034identifier}
+-xcode_product_bundle_identifier_setting.value = "$${xcode_product_bundle_identifier_setting.value}.$${xcode_product_bundle_target}"
+-QMAKE_MAC_XCODE_SETTINGS += xcode_product_bundle_identifier_setting
+-
+-!macx-xcode {
+-    generate_xcode_project.commands = @$(QMAKE) -spec macx-xcode \"$(EXPORT__PRO_FILE_)\" $$QMAKE_ARGS
+-    generate_xcode_project.target = xcodeproj
+-    QMAKE_EXTRA_VARIABLES += _PRO_FILE_
+-    QMAKE_EXTRA_TARGETS += generate_xcode_project
+-}
++load(default_post)
++
++# Recompute SDK version in case the user set it explicitly
++sdk_version = $$QMAKE_MAC_SDK_VERSION
++QMAKE_MAC_SDK_VERSION = $$xcodeSDKInfo(SDKVersion)
++
++contains(TEMPLATE, .*app) {
++    !macx-xcode:if(isEmpty(BUILDS)|build_pass) {
++        # Detect changes to the platform SDK
++        QMAKE_EXTRA_VARIABLES += \
++            QMAKE_MAC_SDK \
++            QMAKE_MAC_SDK_VERSION \
++            QMAKE_XCODE_DEVELOPER_PATH \
++            _QMAKE_STASH_ \
++
++        QMAKE_EXTRA_INCLUDES += $$shell_quote($$PWD/sdk.mk)
++    }
++
++    # Detect incompatible SDK versions
++
++    isEmpty(QT_MAC_SDK_VERSION_MIN): \
++        QT_MAC_SDK_VERSION_MIN = $$QT_MAC_SDK_VERSION
++
++    !versionAtLeast(QMAKE_MAC_SDK_VERSION, $$QT_MAC_SDK_VERSION_MIN): \
++        warning("Qt requires at least version $$QT_MAC_SDK_VERSION_MIN of the platform SDK," \
++              "you're building against version $${QMAKE_MAC_SDK_VERSION}. Please upgrade.")
++
++    !isEmpty(QT_MAC_SDK_VERSION_MAX) {
++        # For Qt developers only
++        !isEmpty($$list($$(QT_MAC_SDK_NO_VERSION_CHECK))): \
++            CONFIG += sdk_no_version_check
++
++        QMAKE_MAC_SDK_MAJOR_VERSION = $$replace(QMAKE_MAC_SDK_VERSION, "(\\d+)(\\.\\d+)(\\.\\d+)?", \\1)
++
++        !sdk_no_version_check:!versionAtMost(QMAKE_MAC_SDK_MAJOR_VERSION, $$QT_MAC_SDK_VERSION_MAX) {
++            warning("Qt has only been tested with version $$QT_MAC_SDK_VERSION_MAX"\
++                    "of the platform SDK, you're using $${QMAKE_MAC_SDK_MAJOR_MINOR_VERSION}.")
++            warning("This is an unsupported configuration. You may experience build issues," \
++                    "and by using")
++            warning("the $$QMAKE_MAC_SDK_VERSION SDK you are opting in to new features" \
++                    "that Qt has not been prepared for.")
++
++            warning("Please downgrade the SDK you use to build your app to version" \
++                    "$$QT_MAC_SDK_VERSION_MAX, or configure")
++            warning("with CONFIG+=sdk_no_version_check when running qmake" \
++                    "to silence this warning.")
++        }
++    }
++}
++
++!no_objective_c:CONFIG += objective_c
++
++qt {
++    qtConfig(static) {
++        # C++11 support means using libc++ instead of libstd++. As the
++        # two libraries are incompatible we need to ensure the end user
++        # project is built using the same C++11 support/no support as Qt.
++        qtConfig(c++11) {
++            CONFIG += c++11
++        } else: c++11 {
++            warning("Qt was not built with C++11 enabled, disabling feature")
++            CONFIG -= c++11
++        }
++
++        !c++11 {
++            # Explicitly use libstdc++ if C++11 support is not enabled,
++            # as otherwise the compiler will choose the standard library
++            # based on the deployment target, which for iOS 7 and OS X 10.9
++            # is libc++, and we can't mix and match the two.
++            QMAKE_CXXFLAGS += -stdlib=libstdc++
++            QMAKE_LFLAGS   += -stdlib=libstdc++
++        }
++    }
++}
++
++# Add the same default rpaths as Xcode does for new projects.
++# This is especially important for iOS/tvOS/watchOS where no other option is possible.
++!no_default_rpath {
++    uikit: QMAKE_RPATHDIR += @executable_path/Frameworks
++    else: QMAKE_RPATHDIR += @executable_path/../Frameworks
++    equals(TEMPLATE, lib):!plugin:lib_bundle: QMAKE_RPATHDIR += @loader_path/Frameworks
++}
++
++# Don't pass -headerpad_max_install_names when using Bitcode.
++# In that case the linker emits a warning stating that the flag is ignored when
++# used with bitcode, for reasons that cannot be determined (rdar://problem/20748962).
++# Using this flag is also unnecessary in practice on UIKit platforms since they
++# are sandboxed, and only UIKit platforms support bitcode to begin with.
++!bitcode: QMAKE_LFLAGS += $$QMAKE_LFLAGS_HEADERPAD
++
++app_extension_api_only {
++    QMAKE_CFLAGS              += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
++    QMAKE_CXXFLAGS            += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
++    QMAKE_CXXFLAGS_PRECOMPILE += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
++    QMAKE_LFLAGS              += $$QMAKE_CFLAGS_APPLICATION_EXTENSION
++}
++
++macx-xcode {
++    qmake_pkginfo_typeinfo.name = QMAKE_PKGINFO_TYPEINFO
++    !isEmpty(QMAKE_PKGINFO_TYPEINFO): \
++        qmake_pkginfo_typeinfo.value = $$QMAKE_PKGINFO_TYPEINFO
++    else: \
++        qmake_pkginfo_typeinfo.value = "????"
++    QMAKE_MAC_XCODE_SETTINGS += qmake_pkginfo_typeinfo
++
++    bundle_version = $$VERSION
++    isEmpty(bundle_version): bundle_version = 1.0.0
++
++    l = $$split(bundle_version, '.') 0 0  # make sure there are at least three
++    VER_MAJ = $$member(l, 0, 0)
++    VER_MIN = $$member(l, 1, 1)
++    VER_PAT = $$member(l, 2, 2)
++    unset(l)
++
++    qmake_full_version.name = QMAKE_FULL_VERSION
++    qmake_full_version.value = $${VER_MAJ}.$${VER_MIN}.$${VER_PAT}
++    QMAKE_MAC_XCODE_SETTINGS += qmake_full_version
++
++    qmake_short_version.name = QMAKE_SHORT_VERSION
++    qmake_short_version.value = $${VER_MAJ}.$${VER_MIN}
++    QMAKE_MAC_XCODE_SETTINGS += qmake_short_version
++
++    !isEmpty(QMAKE_XCODE_DEBUG_INFORMATION_FORMAT) {
++        debug_information_format.name = DEBUG_INFORMATION_FORMAT
++        debug_information_format.value = $$QMAKE_XCODE_DEBUG_INFORMATION_FORMAT
++        debug_information_format.build = debug
++        QMAKE_MAC_XCODE_SETTINGS += debug_information_format
++    }
++
++    QMAKE_XCODE_ARCHS =
++
++    arch_device.name = "ARCHS[sdk=$${device.sdk}*]"
++    arch_device.value = $$QMAKE_APPLE_DEVICE_ARCHS
++    QMAKE_XCODE_ARCHS += $$QMAKE_APPLE_DEVICE_ARCHS
++    QMAKE_MAC_XCODE_SETTINGS += arch_device
++
++    simulator {
++        arch_simulator.name = "ARCHS[sdk=$${simulator.sdk}*]"
++        arch_simulator.value = $$QMAKE_APPLE_SIMULATOR_ARCHS
++        QMAKE_XCODE_ARCHS += $$QMAKE_APPLE_SIMULATOR_ARCHS
++        QMAKE_MAC_XCODE_SETTINGS += arch_simulator
++    }
++
++    only_active_arch.name = ONLY_ACTIVE_ARCH
++    only_active_arch.value = YES
++    only_active_arch.build = debug
++    QMAKE_MAC_XCODE_SETTINGS += only_active_arch
++} else {
++    device|!simulator: VALID_DEVICE_ARCHS = $$QMAKE_APPLE_DEVICE_ARCHS
++    simulator: VALID_SIMULATOR_ARCHS = $$QMAKE_APPLE_SIMULATOR_ARCHS
++    VALID_ARCHS = $$VALID_DEVICE_ARCHS $$VALID_SIMULATOR_ARCHS
++
++    isEmpty(VALID_ARCHS): \
++        error("QMAKE_APPLE_DEVICE_ARCHS or QMAKE_APPLE_SIMULATOR_ARCHS must contain at least one architecture")
++
++    single_arch: VALID_ARCHS = $$first(VALID_ARCHS)
++
++    ACTIVE_ARCHS = $(filter $(EXPORT_VALID_ARCHS), $(ARCHS))
++    ARCH_ARGS = $(foreach arch, $(if $(EXPORT_ACTIVE_ARCHS), $(EXPORT_ACTIVE_ARCHS), $(EXPORT_VALID_ARCHS)), -arch $(arch))
++
++    QMAKE_EXTRA_VARIABLES += VALID_ARCHS ACTIVE_ARCHS ARCH_ARGS
++
++    arch_flags = $(EXPORT_ARCH_ARGS)
++
++    QMAKE_CFLAGS += $$arch_flags
++    QMAKE_CXXFLAGS += $$arch_flags
++    QMAKE_LFLAGS += $$arch_flags
++
++    QMAKE_PCH_ARCHS = $$VALID_ARCHS
++
++    macos: deployment_target = $$QMAKE_MACOSX_DEPLOYMENT_TARGET
++    ios: deployment_target = $$QMAKE_IOS_DEPLOYMENT_TARGET
++    tvos: deployment_target = $$QMAKE_TVOS_DEPLOYMENT_TARGET
++    watchos: deployment_target = $$QMAKE_WATCHOS_DEPLOYMENT_TARGET
++
++    # If we're doing a simulator and device build, device and simulator
++    # architectures use different paths and flags for the sysroot and
++    # deployment target switch, so we must multiplex them across multiple
++    # architectures using -Xarch. Otherwise we fall back to the simple path.
++    # This is not strictly necessary, but results in cleaner command lines
++    # and makes it easier for people to override EXPORT_VALID_ARCHS to limit
++    # individual rules to a different set of architecture(s) from the overall
++    # build (such as machtest in QtCore).
++    simulator:device {
++        QMAKE_XARCH_CFLAGS =
++        QMAKE_XARCH_LFLAGS =
++        QMAKE_EXTRA_VARIABLES += QMAKE_XARCH_CFLAGS QMAKE_XARCH_LFLAGS
++
++        for (arch, VALID_ARCHS) {
++            contains(VALID_SIMULATOR_ARCHS, $$arch) {
++                sdk = $$simulator.sdk
++                version_identifier = $$simulator.deployment_identifier
++            } else {
++                sdk = $$device.sdk
++                version_identifier = $$device.deployment_identifier
++            }
++
++            version_min_flags = \
++                -Xarch_$${arch} \
++                -m$${version_identifier}-version-min=$$deployment_target
++            QMAKE_XARCH_CFLAGS_$${arch} = $$version_min_flags \
++                -Xarch_$${arch} \
++                -isysroot$$xcodeSDKInfo(Path, $$sdk)
++            QMAKE_XARCH_LFLAGS_$${arch} = $$version_min_flags \
++                -Xarch_$${arch} \
++                -isysroot$$xcodeSDKInfo(Path, $$sdk)
++
++            QMAKE_XARCH_CFLAGS += $(EXPORT_QMAKE_XARCH_CFLAGS_$${arch})
++            QMAKE_XARCH_LFLAGS += $(EXPORT_QMAKE_XARCH_LFLAGS_$${arch})
++
++            QMAKE_EXTRA_VARIABLES += \
++                QMAKE_XARCH_CFLAGS_$${arch} \
++                QMAKE_XARCH_LFLAGS_$${arch}
++        }
++
++        QMAKE_CFLAGS += $(EXPORT_QMAKE_XARCH_CFLAGS)
++        QMAKE_CXXFLAGS += $(EXPORT_QMAKE_XARCH_CFLAGS)
++        QMAKE_LFLAGS += $(EXPORT_QMAKE_XARCH_LFLAGS)
++    } else {
++        simulator {
++            version_identifier = $$simulator.deployment_identifier
++            sysroot_path  = $$xcodeSDKInfo(Path, $$simulator.sdk)
++        } else {
++            version_identifier = $$device.deployment_identifier
++            sysroot_path  = $$xcodeSDKInfo(Path, $$device.sdk)
++        }
++        version_min_flag = -m$${version_identifier}-version-min=$$deployment_target
++        QMAKE_CFLAGS += -isysroot $$sysroot_path $$version_min_flag
++        QMAKE_CXXFLAGS += -isysroot $$sysroot_path $$version_min_flag
++        QMAKE_LFLAGS += -isysroot $$sysroot_path $$version_min_flag
++    }
++
++    # Enable precompiled headers for multiple architectures
++    QMAKE_CFLAGS_USE_PRECOMPILE =
++    for (arch, VALID_ARCHS) {
++        icc_pch_style: \
++            use_flag = "-pch-use "
++        else: \
++            use_flag = -include
++
++        # Only use Xarch with multi-arch, as the option confuses ccache
++        count(VALID_ARCHS, 1, greaterThan): \
++            QMAKE_CFLAGS_USE_PRECOMPILE += \
++                -Xarch_$${arch}
++
++        QMAKE_CFLAGS_USE_PRECOMPILE += \
++            $${use_flag}${QMAKE_PCH_OUTPUT_$${arch}}
++    }
++    icc_pch_style {
++        QMAKE_CXXFLAGS_USE_PRECOMPILE = $$QMAKE_CFLAGS_USE_PRECOMPILE -include ${QMAKE_PCH_INPUT}
++        QMAKE_CFLAGS_USE_PRECOMPILE =
++    } else {
++        QMAKE_CXXFLAGS_USE_PRECOMPILE = $$QMAKE_CFLAGS_USE_PRECOMPILE
++        QMAKE_OBJCFLAGS_USE_PRECOMPILE = $$QMAKE_CFLAGS_USE_PRECOMPILE
++        QMAKE_OBJCXXFLAGS_USE_PRECOMPILE = $$QMAKE_CFLAGS_USE_PRECOMPILE
++    }
++
++    QMAKE_PCH_OUTPUT_EXT = _${QMAKE_PCH_ARCH}$${QMAKE_PCH_OUTPUT_EXT}
++}
++
++!equals(sdk_version, $$QMAKE_MAC_SDK_VERSION) {
++    # Explicit SDK version has been set, respect that
++    QMAKE_LFLAGS += -Wl,-sdk_version -Wl,$$sdk_version
++}
++
++cache(QMAKE_XCODE_DEVELOPER_PATH, stash)
++!isEmpty(QMAKE_XCODE_VERSION): \
++    cache(QMAKE_XCODE_VERSION, stash)
++
++QMAKE_XCODE_LIBRARY_SUFFIX = $$qtPlatformTargetSuffix()
++
++xcode_product_bundle_identifier_setting.name = PRODUCT_BUNDLE_IDENTIFIER
++xcode_product_bundle_identifier_setting.value = $$QMAKE_TARGET_BUNDLE_PREFIX
++isEmpty(xcode_product_bundle_identifier_setting.value): \
++    xcode_product_bundle_identifier_setting.value = "com.yourcompany"
++xcode_product_bundle_target = $$QMAKE_BUNDLE
++isEmpty(xcode_product_bundle_target): \
++    xcode_product_bundle_target = ${PRODUCT_NAME:rfc1034identifier}
++xcode_product_bundle_identifier_setting.value = "$${xcode_product_bundle_identifier_setting.value}.$${xcode_product_bundle_target}"
++QMAKE_MAC_XCODE_SETTINGS += xcode_product_bundle_identifier_setting
++
++!macx-xcode {
++    generate_xcode_project.commands = @$(QMAKE) -spec macx-xcode \"$(EXPORT__PRO_FILE_)\" $$QMAKE_ARGS
++    generate_xcode_project.target = xcodeproj
++    QMAKE_EXTRA_VARIABLES += _PRO_FILE_
++    QMAKE_EXTRA_TARGETS += generate_xcode_project
++}
+diff --git a/mkspecs/features/mac/default_pre.prf b/mkspecs/features/mac/default_pre.prf
+index 2c91ba66..3a7e4480 100644
+--- a/mkspecs/features/mac/default_pre.prf
++++ b/mkspecs/features/mac/default_pre.prf
+@@ -1,81 +1,60 @@
+-CONFIG = asset_catalogs rez $$CONFIG
+-
+-macos {
+-    count(QT_ARCHS, 1, >) {
+-        # For universal builds all the config tests are run with the first
+-        # architecture (as reflected by QT_ARCH). We have to manually enable
+-        # CPU features we know exist on the secondary architecture. For
+-        # simplicity we just hard-code the base features we know exist.
+-        # Note that this hack means we end up with QT_CPU_FEATURES.x86_64
+-        # containing neon, and QT_CPU_FEATURES.arm64 containing sse2 e.g.
+-        QT_CPU_FEATURES.$$QT_ARCH += sse sse2
+-        CONFIG += sse sse2
+-        DEFINES += QT_COMPILER_SUPPORTS_SSE2
+-        # FIXME: For x86_64 there are a bunch more. If building a universal
+-        # build with arm64 as the primary architecture we'll miss those.
+-
+-        QT_CPU_FEATURES.$$QT_ARCH += neon
+-        CONFIG += neon
+-        DEFINES += QT_COMPILER_SUPPORTS_NEON
+-    }
+-}
+-
+-load(default_pre)
+-
+-isEmpty(QMAKE_XCODE_DEVELOPER_PATH) {
+-    # Get path of Xcode's Developer directory
+-    QMAKE_XCODE_DEVELOPER_PATH = $$system("/usr/bin/xcode-select --print-path 2>/dev/null")
+-    isEmpty(QMAKE_XCODE_DEVELOPER_PATH): \
+-        error("Xcode path is not set. Please use xcode-select to choose Xcode installation path.")
+-
+-    # Make sure Xcode path is valid
+-    !exists($$QMAKE_XCODE_DEVELOPER_PATH): \
+-        error("Xcode is not installed in $${QMAKE_XCODE_DEVELOPER_PATH}. Please use xcode-select to choose Xcode installation path.")
+-}
+-
+-isEmpty(QMAKE_XCODEBUILD_PATH): \
+-    QMAKE_XCODEBUILD_PATH = $$system("/usr/bin/xcrun -find xcodebuild 2>/dev/null")
+-
+-!isEmpty(QMAKE_XCODEBUILD_PATH) {
+-    # Make sure Xcode is set up properly
+-    !system("/usr/bin/xcrun xcodebuild -license check 2>/dev/null"): \
+-        error("Xcode not set up properly. You need to confirm the license agreement by running 'sudo xcrun xcodebuild -license accept'.")
+-
+-    isEmpty(QMAKE_XCODE_VERSION) {
+-        # Extract Xcode version using xcodebuild
+-        xcode_version = $$system("/usr/bin/xcrun xcodebuild -version")
+-        QMAKE_XCODE_VERSION = $$member(xcode_version, 1)
+-        isEmpty(QMAKE_XCODE_VERSION): error("Could not resolve Xcode version.")
+-        unset(xcode_version)
+-    }
+-}
+-
+-isEmpty(QMAKE_TARGET_BUNDLE_PREFIX) {
+-    QMAKE_XCODE_PREFERENCES_FILE = $$(HOME)/Library/Preferences/com.apple.dt.Xcode.plist
+-    exists($$QMAKE_XCODE_PREFERENCES_FILE): \
+-        QMAKE_TARGET_BUNDLE_PREFIX = $$system("/usr/libexec/PlistBuddy -c 'print IDETemplateOptions:bundleIdentifierPrefix' $$QMAKE_XCODE_PREFERENCES_FILE 2>/dev/null")
+-
+-    !isEmpty(_QMAKE_CACHE_):!isEmpty(QMAKE_TARGET_BUNDLE_PREFIX): \
+-        cache(QMAKE_TARGET_BUNDLE_PREFIX)
+-}
+-
+-QMAKE_ASSET_CATALOGS_APP_ICON = AppIcon
+-
+-# Make the default debug info format for static debug builds
+-# DWARF instead of DWARF with dSYM. This cuts down build times
+-# for application debug builds significantly, as Xcode doesn't
+-# have to pull out all the DWARF info from the Qt static libs
+-# and put it into a dSYM file. We don't need that dSYM file in
+-# the first place, since the information is available in the
+-# object files inside the archives (static libraries).
+-macx-xcode:qtConfig(static): \
+-    QMAKE_XCODE_DEBUG_INFORMATION_FORMAT = dwarf
+-
+-# This variable is used by the xcode_dynamic_library_suffix
+-# feature, which allows Xcode to choose the Qt libraries to link to
+-# at build time, depending on the current Xcode SDK and configuration.
+-QMAKE_XCODE_LIBRARY_SUFFIX_SETTING = QT_LIBRARY_SUFFIX
+-
+-xcode_copy_phase_strip_setting.name = COPY_PHASE_STRIP
+-xcode_copy_phase_strip_setting.value = NO
+-QMAKE_MAC_XCODE_SETTINGS += xcode_copy_phase_strip_setting
++CONFIG = asset_catalogs rez $$CONFIG
++load(default_pre)
++
++isEmpty(QMAKE_XCODE_DEVELOPER_PATH) {
++    # Get path of Xcode's Developer directory
++    QMAKE_XCODE_DEVELOPER_PATH = $$system("/usr/bin/xcode-select --print-path 2>/dev/null")
++    isEmpty(QMAKE_XCODE_DEVELOPER_PATH): \
++        error("Xcode path is not set. Please use xcode-select to choose Xcode installation path.")
++
++    # Make sure Xcode path is valid
++    !exists($$QMAKE_XCODE_DEVELOPER_PATH): \
++        error("Xcode is not installed in $${QMAKE_XCODE_DEVELOPER_PATH}. Please use xcode-select to choose Xcode installation path.")
++}
++
++isEmpty(QMAKE_XCODEBUILD_PATH): \
++    QMAKE_XCODEBUILD_PATH = $$system("/usr/bin/xcrun -find xcodebuild 2>/dev/null")
++
++!isEmpty(QMAKE_XCODEBUILD_PATH) {
++    # Make sure Xcode is set up properly
++    !system("/usr/bin/xcrun xcodebuild -license check 2>/dev/null"): \
++        error("Xcode not set up properly. You need to confirm the license agreement by running 'sudo xcrun xcodebuild -license accept'.")
++
++    isEmpty(QMAKE_XCODE_VERSION) {
++        # Extract Xcode version using xcodebuild
++        xcode_version = $$system("/usr/bin/xcrun xcodebuild -version")
++        QMAKE_XCODE_VERSION = $$member(xcode_version, 1)
++        isEmpty(QMAKE_XCODE_VERSION): error("Could not resolve Xcode version.")
++        unset(xcode_version)
++    }
++}
++
++isEmpty(QMAKE_TARGET_BUNDLE_PREFIX) {
++    QMAKE_XCODE_PREFERENCES_FILE = $$(HOME)/Library/Preferences/com.apple.dt.Xcode.plist
++    exists($$QMAKE_XCODE_PREFERENCES_FILE): \
++        QMAKE_TARGET_BUNDLE_PREFIX = $$system("/usr/libexec/PlistBuddy -c 'print IDETemplateOptions:bundleIdentifierPrefix' $$QMAKE_XCODE_PREFERENCES_FILE 2>/dev/null")
++
++    !isEmpty(_QMAKE_CACHE_):!isEmpty(QMAKE_TARGET_BUNDLE_PREFIX): \
++        cache(QMAKE_TARGET_BUNDLE_PREFIX)
++}
++
++QMAKE_ASSET_CATALOGS_APP_ICON = AppIcon
++
++# Make the default debug info format for static debug builds
++# DWARF instead of DWARF with dSYM. This cuts down build times
++# for application debug builds significantly, as Xcode doesn't
++# have to pull out all the DWARF info from the Qt static libs
++# and put it into a dSYM file. We don't need that dSYM file in
++# the first place, since the information is available in the
++# object files inside the archives (static libraries).
++macx-xcode:qtConfig(static): \
++    QMAKE_XCODE_DEBUG_INFORMATION_FORMAT = dwarf
++
++# This variable is used by the xcode_dynamic_library_suffix
++# feature, which allows Xcode to choose the Qt libraries to link to
++# at build time, depending on the current Xcode SDK and configuration.
++QMAKE_XCODE_LIBRARY_SUFFIX_SETTING = QT_LIBRARY_SUFFIX
++
++xcode_copy_phase_strip_setting.name = COPY_PHASE_STRIP
++xcode_copy_phase_strip_setting.value = NO
++QMAKE_MAC_XCODE_SETTINGS += xcode_copy_phase_strip_setting
+diff --git a/mkspecs/features/toolchain.prf b/mkspecs/features/toolchain.prf
+index 0c505fc9..e7de47a6 100644
+--- a/mkspecs/features/toolchain.prf
++++ b/mkspecs/features/toolchain.prf
+@@ -1,443 +1,438 @@
+-defineTest(qtToolchainError) {
+-    msg = \
+-        $$1 \
+-        "===================" \
+-        $$2 \
+-        "===================" \
+-        $$3
+-    error($$join(msg, $$escape_expand(\\n)))
+-}
+-
+-defineTest(qtCompilerError) {
+-    !cross_compile: \
+-        what =
+-    else: host_build: \
+-        what = " host"
+-    else: \
+-        what = " target"
+-    qtToolchainError("Cannot run$$what compiler '$$1'. Output:", $$2, \
+-                     "Maybe you forgot to setup the environment?")
+-}
+-
+-cross_compile:host_build: \
+-    target_prefix = QMAKE_HOST_CXX
+-else: \
+-    target_prefix = QMAKE_CXX
+-
+-#
+-# Determine and cache the compiler version
+-#
+-
+-defineReplace(qtVariablesFromMSVC) {
+-    ret = $$system("$$1 -nologo -E $$2 $$system_quote($$PWD/data/macros.cpp) 2>NUL", lines, ec)
+-    !equals(ec, 0): qtCompilerError($$1, $$ret)
+-    return($$ret)
+-}
+-
+-defineReplace(qtVariablesFromGCC) {
+-    ret = $$system("$$1 -E $$system_quote($$PWD/data/macros.cpp) \
+-        2>$$QMAKE_SYSTEM_NULL_DEVICE", lines, ec)
+-    !equals(ec, 0): qtCompilerError($$1, $$ret)
+-    return($$ret)
+-}
+-
+-isEmpty($${target_prefix}.COMPILER_MACROS) {
+-    msvc {
+-        clang_cl {
+-            # We need to obtain the cl.exe version first
+-            vars = $$qtVariablesFromMSVC(cl)
+-            for (v, vars) {
+-                isEmpty(v)|contains(v, $${LITERAL_HASH}.*): next()
+-                eval($$v)
+-            }
+-            isEmpty(QMAKE_MSC_FULL_VER): error("Could not determine the Visual Studio version")
+-
+-            QMAKE_CFLAGS_MSVC_COMPAT = $$replace(QMAKE_MSC_FULL_VER, "(..)(..)(.*)", \
+-                                                 "-fms-compatibility-version=\\1.\\2.\\3")
+-            cache($${target_prefix}.QMAKE_CFLAGS_MSVC_COMPAT, set stash, QMAKE_CFLAGS_MSVC_COMPAT)
+-            $${target_prefix}.COMPILER_MACROS += QMAKE_CFLAGS_MSVC_COMPAT
+-            vars = $$qtVariablesFromMSVC($$QMAKE_CXX, $$QMAKE_CFLAGS_MSVC_COMPAT)
+-        } else {
+-            vars = $$qtVariablesFromMSVC($$QMAKE_CXX)
+-        }
+-    } else: gcc|ghs {
+-        vars = $$qtVariablesFromGCC($$QMAKE_CXX)
+-    }
+-    for (v, vars) {
+-        !contains(v, "[A-Z_]+ = .*"): next()
+-        # Set both <varname> for the outer scope ...
+-        eval($$v)
+-        v ~= s/ .*//
+-        isEmpty($$v): error("Compiler produced empty value for $${v}.")
+-        # ... and save QMAKE_(HOST_)?CXX.<varname> in the cache.
+-        cache($${target_prefix}.$$v, set stash, $$v)
+-        $${target_prefix}.COMPILER_MACROS += $$v
+-    }
+-    cache($${target_prefix}.COMPILER_MACROS, set stash)
+-} else {
+-    # load from the cache
+-    for (i, $${target_prefix}.COMPILER_MACROS): \
+-        $$i = $$eval($${target_prefix}.$$i)
+-}
+-
+-# Populate QMAKE_COMPILER_DEFINES and some compatibility variables.
+-# The $$format_number() calls strip leading zeros to avoid misinterpretation as octal.
+-QMAKE_COMPILER_DEFINES += __cplusplus=$$QT_COMPILER_STDCXX
+-!isEmpty(QMAKE_MSC_VER): \
+-    QMAKE_COMPILER_DEFINES += _MSC_VER=$$QMAKE_MSC_VER _MSC_FULL_VER=$$QMAKE_MSC_FULL_VER
+-!isEmpty(QMAKE_ICC_VER): \
+-    QMAKE_COMPILER_DEFINES += __INTEL_COMPILER=$$QMAKE_ICC_VER __INTEL_COMPILER_UPDATE=$$QMAKE_ICC_UPDATE_VER
+-!isEmpty(QMAKE_APPLE_CC): \
+-    QMAKE_COMPILER_DEFINES += __APPLE_CC__=$$QMAKE_APPLE_CC
+-!isEmpty(QMAKE_APPLE_CLANG_MAJOR_VERSION): \
+-    QMAKE_COMPILER_DEFINES += __clang__ \
+-        __clang_major__=$$QMAKE_APPLE_CLANG_MAJOR_VERSION \
+-        __clang_minor__=$$QMAKE_APPLE_CLANG_MINOR_VERSION \
+-        __clang_patchlevel__=$$QMAKE_APPLE_CLANG_PATCH_VERSION
+-!isEmpty(QMAKE_CLANG_MAJOR_VERSION): \
+-    QMAKE_COMPILER_DEFINES += __clang__ \
+-        __clang_major__=$$QMAKE_CLANG_MAJOR_VERSION \
+-        __clang_minor__=$$QMAKE_CLANG_MINOR_VERSION \
+-        __clang_patchlevel__=$$QMAKE_CLANG_PATCH_VERSION
+-!isEmpty(QMAKE_GCC_MAJOR_VERSION): \
+-    QMAKE_COMPILER_DEFINES += \
+-        __GNUC__=$$QMAKE_GCC_MAJOR_VERSION \
+-        __GNUC_MINOR__=$$QMAKE_GCC_MINOR_VERSION \
+-        __GNUC_PATCHLEVEL__=$$QMAKE_GCC_PATCH_VERSION
+-!isEmpty(QMAKE_GHS_VERSION): \
+-    QMAKE_COMPILER_DEFINES += __ghs__ __GHS_VERSION_NUMBER=$$QMAKE_GHS_VERSION
+-
+-QMAKE_CFLAGS += $$QMAKE_CFLAGS_MSVC_COMPAT
+-QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_MSVC_COMPAT
+-
+-clang_cl|intel_icl {
+-    include(../common/msvc-based-version.conf)
+-} else: msvc {
+-    include(../common/msvc-version.conf)
+-}
+-
+-#
+-# Determine and cache the default search paths
+-#
+-
+-defineReplace(qtMakeExpand) {
+-    out = "$$1"
+-    for(ever) {
+-        m = $$replace(out, ".*\\$\\(EXPORT_([^)]+)\\).*", \\1)
+-        equals(m, $$out): \
+-            return($$out)
+-        out = $$replace(out, "\\$\\(EXPORT_$$m\\)", $$eval($$m))
+-    }
+-}
+-
+-defineReplace(qtSplitPathList) {
+-    paths = $$split(1, $$QMAKE_DIRLIST_SEP)
+-    ret =
+-    for (p, paths): \
+-        ret += $$clean_path($$p)
+-    return($$ret)
+-}
+-
+-defineReplace(qtNmakePathList) {
+-    paths =
+-    for (p, 1): \
+-        paths += $$shell_path($$p)
+-    paths ~= s,$${LITERAL_HASH},^$${LITERAL_HASH},g
+-    paths ~= s,\\$,\$\$,g
+-    return($$join(paths, $$QMAKE_DIRLIST_SEP))
+-}
+-
+-msvc {
+-    arch = $$lower($$VCPROJ_ARCH)
+-    equals(arch, x64): \  # may be "win32" or undefined
+-        arch = amd64
+-    else: !equals(arch, arm):!equals(arch, arm64): \  # may be "win32" or undefined
+-        arch = x86
+-    # Consider only WinRT and ARM64 desktop builds to be cross-builds -
+-    # the host is assumed to be Intel and capable of running the target
+-    # executables (so building for x64 on x86 will break).
+-    winrt|equals(arch, arm64): \
+-        CONFIG += msvc_cross
+-}
+-
+-isEmpty($${target_prefix}.INCDIRS) {
+-    #
+-    # Get default include and library paths from compiler
+-    #
+-    wasm {
+-        # wasm compiler does not work here, just use defaults
+-    } else: gcc {
+-        cmd_suffix = "<$$QMAKE_SYSTEM_NULL_DEVICE >$$QMAKE_SYSTEM_NULL_DEVICE"
+-        equals(QMAKE_HOST.os, Windows): \
+-            cmd_prefix = "set LC_ALL=C&"
+-        else: \
+-            cmd_prefix = "LC_ALL=C"
+-
+-        cxx_flags = $$QMAKE_CXXFLAGS
+-
+-        # Manually inject the sysroot for Apple Platforms because its resolution
+-        # normally does not happen until default_post.prf. This is especially
+-        # important for moc to gain the correct default include directory list.
+-        # While technically incorrect but without any likely practical effect,
+-        # UIKit simulator platforms will see the device SDK's sysroot in
+-        # QMAKE_DEFAULT_*DIRS, because they're handled in a single build pass.
+-        darwin {
+-            uikit {
+-                # Clang doesn't automatically pick up the architecture, just because
+-                # we're passing the iOS sysroot below, and we will end up building the
+-                # test for the host architecture, resulting in linker errors when
+-                # linking against the iOS libraries. We work around this by passing
+-                # the architecture explicitly.
+-                cxx_flags += -arch $$first(QMAKE_APPLE_DEVICE_ARCHS)
+-            }
+-
+-            uikit:macx-xcode: \
+-                cxx_flags += -isysroot $$sdk_path_device.value
+-            else: \
+-                cxx_flags += -isysroot $$QMAKE_MAC_SDK_PATH
+-        }
+-
+-        rim_qcc: \
+-            # Need the cc1plus and ld command lines to pick up the paths
+-            cxx_flags += $$QMAKE_LFLAGS_SHLIB -o $$QMAKE_SYSTEM_NULL_DEVICE -v
+-        else: darwin:clang: \
+-            # Need to link to pick up library paths
+-            cxx_flags += -g0 $$QMAKE_LFLAGS_SHLIB -o /dev/null -v -Wl,-v
+-        else: \
+-            # Just preprocess, might not pick up library paths
+-            cxx_flags += -E -v
+-
+-        output = $$system("$$cmd_prefix $$QMAKE_CXX $$qtMakeExpand($$cxx_flags) -xc++ - 2>&1 $$cmd_suffix", lines, ec)
+-        !equals(ec, 0): qtCompilerError($$QMAKE_CXX, $$output)
+-
+-        rim_qcc {
+-            for (line, output) {
+-                contains(line, "^[^ ]*cc1plus .*") {
+-                    take_next = false
+-                    for (parameter, $$list($$line)) {
+-                        $$take_next {
+-                            QMAKE_DEFAULT_INCDIRS += $$clean_path($$parameter)
+-                            take_next = false
+-                        } else: equals(parameter, "-isystem") {
+-                            take_next = true
+-                        }
+-                    }
+-                } else: contains(line, "^[^ ]*-ld .*") {
+-                    for (parameter, $$list($$line)) {
+-                        contains(parameter, "^-L.*") {
+-                            parameter ~= s/^-L//
+-                            QMAKE_DEFAULT_LIBDIRS += $$clean_path($$parameter)
+-                        }
+-                    }
+-                }
+-            }
+-        } else {
+-            add_includes = false
+-            add_libraries = false
+-            for (line, output) {
+-                line ~= s/^[ \\t]*//  # remove leading spaces
+-                contains(line, "LIBRARY_PATH=.*") {
+-                    line ~= s/^LIBRARY_PATH=//  # remove leading LIBRARY_PATH=
+-                    equals(QMAKE_HOST.os, Windows): \
+-                        paths = $$split(line, ;)
+-                    else: \
+-                        paths = $$split(line, $$QMAKE_DIRLIST_SEP)
+-                    for (path, paths): \
+-                        QMAKE_DEFAULT_LIBDIRS += $$clean_path($$path)
+-                } else: contains(line, "Library search paths:") {
+-                    add_libraries = true
+-                } else: contains(line, "$${LITERAL_HASH}include <.*") {  # #include <...> search starts here:
+-                    add_includes = true
+-                } else: contains(line, "End of search.*") {
+-                    add_includes = false
+-                } else: $$add_libraries {
+-                    # We assume all library search paths are absolute
+-                    !contains(line, "^/.*") {
+-                        add_libraries = false
+-                        next()
+-                    }
+-                    QMAKE_DEFAULT_LIBDIRS += $$clean_path($$line)
+-                } else: $$add_includes {
+-                    !contains(line, ".* \\(framework directory\\)"): \
+-                        QMAKE_DEFAULT_INCDIRS += $$clean_path($$line)
+-                }
+-            }
+-        }
+-        if(!darwin:clang)|intel_icc {
+-            # Clang on a non-Apple system (that is, a system without ld64 -- say, with GNU ld
+-            # or gold under Linux) will not print any library search path. Need to use another
+-            # invocation with different options (which in turn doesn't print include search
+-            # paths, so it can't just be used in place of the above code).
+-            # What's more, -print-search-dirs can't be used on clang on Apple because it
+-            # won't print all the library paths (only the clang-internal ones).
+-            output = $$system("$$cmd_prefix $$QMAKE_LINK $$QMAKE_LFLAGS -print-search-dirs", lines, ec)
+-            !equals(ec, 0): qtCompilerError($$QMAKE_LINK, $$output)
+-
+-            for (line, output) {
+-                contains(line, "^libraries: .*") {
+-                    line ~= s,^libraries: ,,
+-                    equals(QMAKE_HOST.os, Windows) {
+-                        # clang (7.x) on Windows uses the wrong path list separator ...
+-                        line ~= s,:(?![/\\\\]),;,
+-                        paths = $$split(line, ;)
+-                    } else {
+-                        paths = $$split(line, $$QMAKE_DIRLIST_SEP)
+-                    }
+-                    for (path, paths): \
+-                        QMAKE_DEFAULT_LIBDIRS += $$clean_path($$replace(path, ^=, $$[SYSROOT]))
+-                }
+-            }
+-        }
+-        isEmpty(QMAKE_DEFAULT_LIBDIRS)|isEmpty(QMAKE_DEFAULT_INCDIRS): \
+-            !integrity: \
+-                error("failed to parse default search paths from compiler output")
+-        QMAKE_DEFAULT_LIBDIRS = $$unique(QMAKE_DEFAULT_LIBDIRS)
+-    } else: ghs {
+-        cmd = $$QMAKE_CXX $$QMAKE_CXXFLAGS -$${LITERAL_HASH} -o /tmp/fake_output /tmp/fake_input.cpp
+-        output = $$system("$$cmd", blob, ec)
+-        !equals(ec, 0): qtCompilerError($$QMAKE_CXX, $$output)
+-        output ~= s/\\\\\\n {8}//g
+-        output = $$split(output, $$escape_expand(\\n))
+-        for (line, output) {
+-            contains(line, "^[^ ]+/ecom[^ ]+ .* /tmp/fake_input\\.cpp") {
+-                for (parameter, $$list($$line)) {
+-                    contains(parameter, "^(-I|--include_no_mmd=|--sys_include=).*") {
+-                        parameter ~= s/^(-I|--include_no_mmd=|--sys_include=)//
+-                        QMAKE_DEFAULT_INCDIRS += $$clean_path($$parameter)
+-                    }
+-                }
+-            } else: contains(line, "^[^ ]+/elxr .*") {
+-                for (parameter, $$list($$line)) {
+-                    contains(parameter, "^-L.*") {
+-                        parameter ~= s/^-L//
+-                        QMAKE_DEFAULT_LIBDIRS += $$clean_path($$parameter)
+-                    }
+-                }
+-            }
+-        }
+-    } else: msvc_cross {
+-        # Use a batch file, because %VAR% in the system() call expands to
+-        # the pre-script-call value, and !VAR! cannot be enabled outside
+-        # a batch file without invoking another shell instance.
+-        cmd = $$system_quote($$system_path($$PWD/data/dumpvcvars.bat))
+-
+-        hostArch = $$QMAKE_HOST.arch
+-        equals(hostArch, x86_64): \
+-            hostArch = amd64
+-        !equals(arch, $$hostArch): \
+-            arch = $${hostArch}_$$arch
+-
+-        isEmpty(MSVC_VER): \
+-            error("Mkspec does not specify MSVC_VER. Cannot continue.")
+-        versionAtLeast(MSVC_VER, 15.0) {
+-            dir = $$(VSINSTALLDIR)
+-            isEmpty(dir) {
+-                version_parts = $$split(MSVC_VER, .)
+-                MSVC_NEXT_MAJOR = $$num_add($$first(version_parts), 1)
+-                vswhere = "$$getenv(ProgramFiles\(x86\))/Microsoft Visual Studio/Installer/vswhere.exe"
+-                !exists($$vswhere): \
+-                    error("Could not find $$vswhere")
+-                vswhere = $$system_quote($$system_path($$vswhere))
+-                # -version parameter: A version range for instances to find. 15.0 will get all versions >= 15.0
+-                # Example: [15.0,16.0) will find versions 15.*.
+-                dir = $$system("$$vswhere -latest -version [$$MSVC_VER,$${MSVC_NEXT_MAJOR}.0] -property installationPath")
+-            }
+-            isEmpty(dir): \
+-                error("Failed to find the Visual Studio installation directory.")
+-            cmd += $$system_quote($$dir\\VC\\Auxiliary\\Build\\vcvarsall.bat) $$arch
+-        } else {
+-            dir = $$(VCINSTALLDIR)
+-            isEmpty(dir): \
+-                dir = $$read_registry(HKLM, \
+-                    "Software\\Microsoft\\VisualStudio\\$$MSVC_VER\\Setup\\VC\\ProductDir", 32)
+-            isEmpty(dir): \
+-                error("Failed to find the Visual C installation directory.")
+-            cmd += $$system_quote($$dir\\vcvarsall.bat) $$arch
+-        }
+-        winrt: cmd += store
+-
+-        isEmpty(WINSDK_VER): \
+-            error("Mkspec does not specify WINSDK_VER. Cannot continue.")
+-        # We prefer the environment variable, because that may work around
+-        # a broken registry entry after uninstalling a newer SDK.
+-        # However, we do that only if the major+minor SDK version matches
+-        # the one requested by the mkspec, as we might be building for a
+-        # newer target than the host.
+-        winsdk_ver = $$(WindowsSDKVersion)
+-        !isEmpty(winsdk_ver) {
+-            winsdk_ver ~= s,\\\\$,,  # Work around SDK breakage.
+-            !equals(WINSDK_VER, $$replace(winsdk_ver, ^(\\d+\\.\\d+).*$, \\1)): \
+-                winsdk_ver =
+-        }
+-        !isEmpty(winsdk_ver) {
+-            cmd += $$winsdk_ver
+-        } else {
+-            winsdk_ver = $$read_registry(HKLM, \
+-                "Software\\Microsoft\\Microsoft SDKs\\Windows\\v$$WINSDK_VER\\ProductVersion", 32)
+-            isEmpty(winsdk_ver): \
+-                error("Windows SDK $$WINSDK_VER requested by mkspec is not installed. Cannot continue.")
+-            cmd += $${winsdk_ver}.0
+-        }
+-
+-        output = $$system("$$cmd 2>&1", lines, ec)
+-        !equals(ec, 0): \
+-            qtToolchainError("SDK setup script failed. Output:", $$output, \
+-                             "Command was: $$cmd")
+-        lines = $$output
+-        for(ever) {
+-            isEmpty(lines): \
+-                break()
+-            line = $$take_first(lines)
+-            equals(line, "=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+="): \
+-                break()
+-        }
+-        !count(lines, 3): \
+-            qtToolchainError("SDK setup script returned unexpected output:", $$output, \
+-                             "Command was: $$cmd")
+-
+-        # These contain only paths for the target.
+-        QMAKE_DEFAULT_INCDIRS = $$qtSplitPathList($$member(lines, 0))
+-        QMAKE_DEFAULT_LIBDIRS = $$qtSplitPathList($$member(lines, 1))
+-        # PATH is inherently for the host, and paths that are not shadowed
+-        # by vcvarsall.bat are assumed to contain only tools that work for
+-        # both host and target builds.
+-        QMAKE_DEFAULT_PATH = $$qtSplitPathList($$member(lines, 2))
+-        # We de-duplicate, because the script just prepends to the paths for
+-        # the host, some of which are identical to the ones for the target.
+-        QMAKE_DEFAULT_PATH = $$unique(QMAKE_DEFAULT_PATH)
+-    } else: msvc {
+-        LIB = $$getenv("LIB")
+-        QMAKE_DEFAULT_LIBDIRS = $$split(LIB, $$QMAKE_DIRLIST_SEP)
+-        INCLUDE = $$getenv("INCLUDE")
+-        QMAKE_DEFAULT_INCDIRS = $$split(INCLUDE, $$QMAKE_DIRLIST_SEP)
+-    }
+-
+-    unix:if(!cross_compile|host_build) {
+-        isEmpty(QMAKE_DEFAULT_INCDIRS): QMAKE_DEFAULT_INCDIRS = /usr/include /usr/local/include
+-        isEmpty(QMAKE_DEFAULT_LIBDIRS): QMAKE_DEFAULT_LIBDIRS = /lib /usr/lib
+-    }
+-
+-    # cache() complains about undefined variables and doesn't persist empty ones.
+-    !isEmpty(QMAKE_DEFAULT_INCDIRS): \
+-        cache($${target_prefix}.INCDIRS, set stash, QMAKE_DEFAULT_INCDIRS)
+-    !isEmpty(QMAKE_DEFAULT_LIBDIRS): \
+-        cache($${target_prefix}.LIBDIRS, set stash, QMAKE_DEFAULT_LIBDIRS)
+-    !isEmpty(QMAKE_DEFAULT_PATH): \
+-        cache($${target_prefix}.PATH, set stash, QMAKE_DEFAULT_PATH)
+-} else {
+-    QMAKE_DEFAULT_INCDIRS = $$eval($${target_prefix}.INCDIRS)
+-    QMAKE_DEFAULT_LIBDIRS = $$eval($${target_prefix}.LIBDIRS)
+-    QMAKE_DEFAULT_PATH = $$eval($${target_prefix}.PATH)
+-}
+-
+-msvc_cross {
+-    qmake_inc_exp.name = INCLUDE
+-    qmake_inc_exp.value = $$qtNmakePathList($$QMAKE_DEFAULT_INCDIRS)
+-    qmake_lib_exp.name = LIB
+-    qmake_lib_exp.value = $$qtNmakePathList($$QMAKE_DEFAULT_LIBDIRS)
+-    qmake_path_exp.name = PATH
+-    qmake_path_exp.value = $$qtNmakePathList($$QMAKE_DEFAULT_PATH)
+-    QMAKE_EXPORTED_VARIABLES += qmake_inc_exp qmake_lib_exp qmake_path_exp
+-}
+-
+-unset(target_prefix)
++defineTest(qtToolchainError) {
++    msg = \
++        $$1 \
++        "===================" \
++        $$2 \
++        "===================" \
++        $$3
++    error($$join(msg, $$escape_expand(\\n)))
++}
++
++defineTest(qtCompilerError) {
++    !cross_compile: \
++        what =
++    else: host_build: \
++        what = " host"
++    else: \
++        what = " target"
++    qtToolchainError("Cannot run$$what compiler '$$1'. Output:", $$2, \
++                     "Maybe you forgot to setup the environment?")
++}
++
++cross_compile:host_build: \
++    target_prefix = QMAKE_HOST_CXX
++else: \
++    target_prefix = QMAKE_CXX
++
++#
++# Determine and cache the compiler version
++#
++
++defineReplace(qtVariablesFromMSVC) {
++    ret = $$system("$$1 -nologo -E $$2 $$system_quote($$PWD/data/macros.cpp) 2>NUL", lines, ec)
++    !equals(ec, 0): qtCompilerError($$1, $$ret)
++    return($$ret)
++}
++
++defineReplace(qtVariablesFromGCC) {
++    ret = $$system("$$1 -E $$system_quote($$PWD/data/macros.cpp) \
++        2>$$QMAKE_SYSTEM_NULL_DEVICE", lines, ec)
++    !equals(ec, 0): qtCompilerError($$1, $$ret)
++    return($$ret)
++}
++
++isEmpty($${target_prefix}.COMPILER_MACROS) {
++    msvc {
++        clang_cl {
++            # We need to obtain the cl.exe version first
++            vars = $$qtVariablesFromMSVC(cl)
++            for (v, vars) {
++                isEmpty(v)|contains(v, $${LITERAL_HASH}.*): next()
++                eval($$v)
++            }
++            isEmpty(QMAKE_MSC_FULL_VER): error("Could not determine the Visual Studio version")
++
++            QMAKE_CFLAGS_MSVC_COMPAT = $$replace(QMAKE_MSC_FULL_VER, "(..)(..)(.*)", \
++                                                 "-fms-compatibility-version=\\1.\\2.\\3")
++            cache($${target_prefix}.QMAKE_CFLAGS_MSVC_COMPAT, set stash, QMAKE_CFLAGS_MSVC_COMPAT)
++            $${target_prefix}.COMPILER_MACROS += QMAKE_CFLAGS_MSVC_COMPAT
++            vars = $$qtVariablesFromMSVC($$QMAKE_CXX, $$QMAKE_CFLAGS_MSVC_COMPAT)
++        } else {
++            vars = $$qtVariablesFromMSVC($$QMAKE_CXX)
++        }
++    } else: gcc|ghs {
++        vars = $$qtVariablesFromGCC($$QMAKE_CXX)
++    }
++    for (v, vars) {
++        !contains(v, "[A-Z_]+ = .*"): next()
++        # Set both <varname> for the outer scope ...
++        eval($$v)
++        v ~= s/ .*//
++        isEmpty($$v): error("Compiler produced empty value for $${v}.")
++        # ... and save QMAKE_(HOST_)?CXX.<varname> in the cache.
++        cache($${target_prefix}.$$v, set stash, $$v)
++        $${target_prefix}.COMPILER_MACROS += $$v
++    }
++    cache($${target_prefix}.COMPILER_MACROS, set stash)
++} else {
++    # load from the cache
++    for (i, $${target_prefix}.COMPILER_MACROS): \
++        $$i = $$eval($${target_prefix}.$$i)
++}
++
++# Populate QMAKE_COMPILER_DEFINES and some compatibility variables.
++# The $$format_number() calls strip leading zeros to avoid misinterpretation as octal.
++QMAKE_COMPILER_DEFINES += __cplusplus=$$QT_COMPILER_STDCXX
++!isEmpty(QMAKE_MSC_VER): \
++    QMAKE_COMPILER_DEFINES += _MSC_VER=$$QMAKE_MSC_VER _MSC_FULL_VER=$$QMAKE_MSC_FULL_VER
++!isEmpty(QMAKE_ICC_VER): \
++    QMAKE_COMPILER_DEFINES += __INTEL_COMPILER=$$QMAKE_ICC_VER __INTEL_COMPILER_UPDATE=$$QMAKE_ICC_UPDATE_VER
++!isEmpty(QMAKE_APPLE_CC): \
++    QMAKE_COMPILER_DEFINES += __APPLE_CC__=$$QMAKE_APPLE_CC
++!isEmpty(QMAKE_APPLE_CLANG_MAJOR_VERSION): \
++    QMAKE_COMPILER_DEFINES += __clang__ \
++        __clang_major__=$$QMAKE_APPLE_CLANG_MAJOR_VERSION \
++        __clang_minor__=$$QMAKE_APPLE_CLANG_MINOR_VERSION \
++        __clang_patchlevel__=$$QMAKE_APPLE_CLANG_PATCH_VERSION
++!isEmpty(QMAKE_CLANG_MAJOR_VERSION): \
++    QMAKE_COMPILER_DEFINES += __clang__ \
++        __clang_major__=$$QMAKE_CLANG_MAJOR_VERSION \
++        __clang_minor__=$$QMAKE_CLANG_MINOR_VERSION \
++        __clang_patchlevel__=$$QMAKE_CLANG_PATCH_VERSION
++!isEmpty(QMAKE_GCC_MAJOR_VERSION): \
++    QMAKE_COMPILER_DEFINES += \
++        __GNUC__=$$QMAKE_GCC_MAJOR_VERSION \
++        __GNUC_MINOR__=$$QMAKE_GCC_MINOR_VERSION \
++        __GNUC_PATCHLEVEL__=$$QMAKE_GCC_PATCH_VERSION
++!isEmpty(QMAKE_GHS_VERSION): \
++    QMAKE_COMPILER_DEFINES += __ghs__ __GHS_VERSION_NUMBER=$$QMAKE_GHS_VERSION
++
++QMAKE_CFLAGS += $$QMAKE_CFLAGS_MSVC_COMPAT
++QMAKE_CXXFLAGS += $$QMAKE_CFLAGS_MSVC_COMPAT
++
++clang_cl|intel_icl {
++    include(../common/msvc-based-version.conf)
++} else: msvc {
++    include(../common/msvc-version.conf)
++}
++
++#
++# Determine and cache the default search paths
++#
++
++defineReplace(qtMakeExpand) {
++    out = "$$1"
++    for(ever) {
++        m = $$replace(out, ".*\\$\\(EXPORT_([^)]+)\\).*", \\1)
++        equals(m, $$out): \
++            return($$out)
++        out = $$replace(out, "\\$\\(EXPORT_$$m\\)", $$eval($$m))
++    }
++}
++
++defineReplace(qtSplitPathList) {
++    paths = $$split(1, $$QMAKE_DIRLIST_SEP)
++    ret =
++    for (p, paths): \
++        ret += $$clean_path($$p)
++    return($$ret)
++}
++
++defineReplace(qtNmakePathList) {
++    paths =
++    for (p, 1): \
++        paths += $$shell_path($$p)
++    paths ~= s,$${LITERAL_HASH},^$${LITERAL_HASH},g
++    paths ~= s,\\$,\$\$,g
++    return($$join(paths, $$QMAKE_DIRLIST_SEP))
++}
++
++msvc {
++    arch = $$lower($$VCPROJ_ARCH)
++    equals(arch, x64): \  # may be "win32" or undefined
++        arch = amd64
++    else: !equals(arch, arm):!equals(arch, arm64): \  # may be "win32" or undefined
++        arch = x86
++    # Consider only WinRT and ARM64 desktop builds to be cross-builds -
++    # the host is assumed to be Intel and capable of running the target
++    # executables (so building for x64 on x86 will break).
++    winrt|equals(arch, arm64): \
++        CONFIG += msvc_cross
++}
++
++isEmpty($${target_prefix}.INCDIRS) {
++    #
++    # Get default include and library paths from compiler
++    #
++    wasm {
++        # wasm compiler does not work here, just use defaults
++    } else: gcc {
++        cmd_suffix = "<$$QMAKE_SYSTEM_NULL_DEVICE >$$QMAKE_SYSTEM_NULL_DEVICE"
++        equals(QMAKE_HOST.os, Windows): \
++            cmd_prefix = "set LC_ALL=C&"
++        else: \
++            cmd_prefix = "LC_ALL=C"
++
++        cxx_flags = $$QMAKE_CXXFLAGS
++
++        # Manually inject the sysroot for Apple Platforms because its resolution
++        # normally does not happen until default_post.prf. This is especially
++        # important for moc to gain the correct default include directory list.
++        # While technically incorrect but without any likely practical effect,
++        # UIKit simulator platforms will see the device SDK's sysroot in
++        # QMAKE_DEFAULT_*DIRS, because they're handled in a single build pass.
++        darwin {
++            # Clang doesn't pick up the architecture from the sysroot, and will
++            # default to the host architecture, so we need to manually set it.
++            cxx_flags += -arch $$QMAKE_APPLE_DEVICE_ARCHS
++
++            uikit:macx-xcode: \
++                cxx_flags += -isysroot $$sdk_path_device.value
++            else: \
++                cxx_flags += -isysroot $$QMAKE_MAC_SDK_PATH
++        }
++
++        rim_qcc: \
++            # Need the cc1plus and ld command lines to pick up the paths
++            cxx_flags += $$QMAKE_LFLAGS_SHLIB -o $$QMAKE_SYSTEM_NULL_DEVICE -v
++        else: darwin:clang: \
++            # Need to link to pick up library paths
++            cxx_flags += -g0 $$QMAKE_LFLAGS_SHLIB -o /dev/null -v -Wl,-v
++        else: \
++            # Just preprocess, might not pick up library paths
++            cxx_flags += -E -v
++
++        output = $$system("$$cmd_prefix $$QMAKE_CXX $$qtMakeExpand($$cxx_flags) -xc++ - 2>&1 $$cmd_suffix", lines, ec)
++        !equals(ec, 0): qtCompilerError($$QMAKE_CXX, $$output)
++
++        rim_qcc {
++            for (line, output) {
++                contains(line, "^[^ ]*cc1plus .*") {
++                    take_next = false
++                    for (parameter, $$list($$line)) {
++                        $$take_next {
++                            QMAKE_DEFAULT_INCDIRS += $$clean_path($$parameter)
++                            take_next = false
++                        } else: equals(parameter, "-isystem") {
++                            take_next = true
++                        }
++                    }
++                } else: contains(line, "^[^ ]*-ld .*") {
++                    for (parameter, $$list($$line)) {
++                        contains(parameter, "^-L.*") {
++                            parameter ~= s/^-L//
++                            QMAKE_DEFAULT_LIBDIRS += $$clean_path($$parameter)
++                        }
++                    }
++                }
++            }
++        } else {
++            add_includes = false
++            add_libraries = false
++            for (line, output) {
++                line ~= s/^[ \\t]*//  # remove leading spaces
++                contains(line, "LIBRARY_PATH=.*") {
++                    line ~= s/^LIBRARY_PATH=//  # remove leading LIBRARY_PATH=
++                    equals(QMAKE_HOST.os, Windows): \
++                        paths = $$split(line, ;)
++                    else: \
++                        paths = $$split(line, $$QMAKE_DIRLIST_SEP)
++                    for (path, paths): \
++                        QMAKE_DEFAULT_LIBDIRS += $$clean_path($$path)
++                } else: contains(line, "Library search paths:") {
++                    add_libraries = true
++                } else: contains(line, "$${LITERAL_HASH}include <.*") {  # #include <...> search starts here:
++                    add_includes = true
++                } else: contains(line, "End of search.*") {
++                    add_includes = false
++                } else: $$add_libraries {
++                    # We assume all library search paths are absolute
++                    !contains(line, "^/.*") {
++                        add_libraries = false
++                        next()
++                    }
++                    QMAKE_DEFAULT_LIBDIRS += $$clean_path($$line)
++                } else: $$add_includes {
++                    !contains(line, ".* \\(framework directory\\)"): \
++                        QMAKE_DEFAULT_INCDIRS += $$clean_path($$line)
++                }
++            }
++        }
++        if(!darwin:clang)|intel_icc {
++            # Clang on a non-Apple system (that is, a system without ld64 -- say, with GNU ld
++            # or gold under Linux) will not print any library search path. Need to use another
++            # invocation with different options (which in turn doesn't print include search
++            # paths, so it can't just be used in place of the above code).
++            # What's more, -print-search-dirs can't be used on clang on Apple because it
++            # won't print all the library paths (only the clang-internal ones).
++            output = $$system("$$cmd_prefix $$QMAKE_LINK $$QMAKE_LFLAGS -print-search-dirs", lines, ec)
++            !equals(ec, 0): qtCompilerError($$QMAKE_LINK, $$output)
++
++            for (line, output) {
++                contains(line, "^libraries: .*") {
++                    line ~= s,^libraries: ,,
++                    equals(QMAKE_HOST.os, Windows) {
++                        # clang (7.x) on Windows uses the wrong path list separator ...
++                        line ~= s,:(?![/\\\\]),;,
++                        paths = $$split(line, ;)
++                    } else {
++                        paths = $$split(line, $$QMAKE_DIRLIST_SEP)
++                    }
++                    for (path, paths): \
++                        QMAKE_DEFAULT_LIBDIRS += $$clean_path($$replace(path, ^=, $$[SYSROOT]))
++                }
++            }
++        }
++        isEmpty(QMAKE_DEFAULT_LIBDIRS)|isEmpty(QMAKE_DEFAULT_INCDIRS): \
++            !integrity: \
++                error("failed to parse default search paths from compiler output")
++        QMAKE_DEFAULT_LIBDIRS = $$unique(QMAKE_DEFAULT_LIBDIRS)
++    } else: ghs {
++        cmd = $$QMAKE_CXX $$QMAKE_CXXFLAGS -$${LITERAL_HASH} -o /tmp/fake_output /tmp/fake_input.cpp
++        output = $$system("$$cmd", blob, ec)
++        !equals(ec, 0): qtCompilerError($$QMAKE_CXX, $$output)
++        output ~= s/\\\\\\n {8}//g
++        output = $$split(output, $$escape_expand(\\n))
++        for (line, output) {
++            contains(line, "^[^ ]+/ecom[^ ]+ .* /tmp/fake_input\\.cpp") {
++                for (parameter, $$list($$line)) {
++                    contains(parameter, "^(-I|--include_no_mmd=|--sys_include=).*") {
++                        parameter ~= s/^(-I|--include_no_mmd=|--sys_include=)//
++                        QMAKE_DEFAULT_INCDIRS += $$clean_path($$parameter)
++                    }
++                }
++            } else: contains(line, "^[^ ]+/elxr .*") {
++                for (parameter, $$list($$line)) {
++                    contains(parameter, "^-L.*") {
++                        parameter ~= s/^-L//
++                        QMAKE_DEFAULT_LIBDIRS += $$clean_path($$parameter)
++                    }
++                }
++            }
++        }
++    } else: msvc_cross {
++        # Use a batch file, because %VAR% in the system() call expands to
++        # the pre-script-call value, and !VAR! cannot be enabled outside
++        # a batch file without invoking another shell instance.
++        cmd = $$system_quote($$system_path($$PWD/data/dumpvcvars.bat))
++
++        hostArch = $$QMAKE_HOST.arch
++        equals(hostArch, x86_64): \
++            hostArch = amd64
++        !equals(arch, $$hostArch): \
++            arch = $${hostArch}_$$arch
++
++        isEmpty(MSVC_VER): \
++            error("Mkspec does not specify MSVC_VER. Cannot continue.")
++        versionAtLeast(MSVC_VER, 15.0) {
++            dir = $$(VSINSTALLDIR)
++            isEmpty(dir) {
++                version_parts = $$split(MSVC_VER, .)
++                MSVC_NEXT_MAJOR = $$num_add($$first(version_parts), 1)
++                vswhere = "$$getenv(ProgramFiles\(x86\))/Microsoft Visual Studio/Installer/vswhere.exe"
++                !exists($$vswhere): \
++                    error("Could not find $$vswhere")
++                vswhere = $$system_quote($$system_path($$vswhere))
++                # -version parameter: A version range for instances to find. 15.0 will get all versions >= 15.0
++                # Example: [15.0,16.0) will find versions 15.*.
++                dir = $$system("$$vswhere -latest -version [$$MSVC_VER,$${MSVC_NEXT_MAJOR}.0] -property installationPath")
++            }
++            isEmpty(dir): \
++                error("Failed to find the Visual Studio installation directory.")
++            cmd += $$system_quote($$dir\\VC\\Auxiliary\\Build\\vcvarsall.bat) $$arch
++        } else {
++            dir = $$(VCINSTALLDIR)
++            isEmpty(dir): \
++                dir = $$read_registry(HKLM, \
++                    "Software\\Microsoft\\VisualStudio\\$$MSVC_VER\\Setup\\VC\\ProductDir", 32)
++            isEmpty(dir): \
++                error("Failed to find the Visual C installation directory.")
++            cmd += $$system_quote($$dir\\vcvarsall.bat) $$arch
++        }
++        winrt: cmd += store
++
++        isEmpty(WINSDK_VER): \
++            error("Mkspec does not specify WINSDK_VER. Cannot continue.")
++        # We prefer the environment variable, because that may work around
++        # a broken registry entry after uninstalling a newer SDK.
++        # However, we do that only if the major+minor SDK version matches
++        # the one requested by the mkspec, as we might be building for a
++        # newer target than the host.
++        winsdk_ver = $$(WindowsSDKVersion)
++        !isEmpty(winsdk_ver) {
++            winsdk_ver ~= s,\\\\$,,  # Work around SDK breakage.
++            !equals(WINSDK_VER, $$replace(winsdk_ver, ^(\\d+\\.\\d+).*$, \\1)): \
++                winsdk_ver =
++        }
++        !isEmpty(winsdk_ver) {
++            cmd += $$winsdk_ver
++        } else {
++            winsdk_ver = $$read_registry(HKLM, \
++                "Software\\Microsoft\\Microsoft SDKs\\Windows\\v$$WINSDK_VER\\ProductVersion", 32)
++            isEmpty(winsdk_ver): \
++                error("Windows SDK $$WINSDK_VER requested by mkspec is not installed. Cannot continue.")
++            cmd += $${winsdk_ver}.0
++        }
++
++        output = $$system("$$cmd 2>&1", lines, ec)
++        !equals(ec, 0): \
++            qtToolchainError("SDK setup script failed. Output:", $$output, \
++                             "Command was: $$cmd")
++        lines = $$output
++        for(ever) {
++            isEmpty(lines): \
++                break()
++            line = $$take_first(lines)
++            equals(line, "=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+="): \
++                break()
++        }
++        !count(lines, 3): \
++            qtToolchainError("SDK setup script returned unexpected output:", $$output, \
++                             "Command was: $$cmd")
++
++        # These contain only paths for the target.
++        QMAKE_DEFAULT_INCDIRS = $$qtSplitPathList($$member(lines, 0))
++        QMAKE_DEFAULT_LIBDIRS = $$qtSplitPathList($$member(lines, 1))
++        # PATH is inherently for the host, and paths that are not shadowed
++        # by vcvarsall.bat are assumed to contain only tools that work for
++        # both host and target builds.
++        QMAKE_DEFAULT_PATH = $$qtSplitPathList($$member(lines, 2))
++        # We de-duplicate, because the script just prepends to the paths for
++        # the host, some of which are identical to the ones for the target.
++        QMAKE_DEFAULT_PATH = $$unique(QMAKE_DEFAULT_PATH)
++    } else: msvc {
++        LIB = $$getenv("LIB")
++        QMAKE_DEFAULT_LIBDIRS = $$split(LIB, $$QMAKE_DIRLIST_SEP)
++        INCLUDE = $$getenv("INCLUDE")
++        QMAKE_DEFAULT_INCDIRS = $$split(INCLUDE, $$QMAKE_DIRLIST_SEP)
++    }
++
++    unix:if(!cross_compile|host_build) {
++        isEmpty(QMAKE_DEFAULT_INCDIRS): QMAKE_DEFAULT_INCDIRS = /usr/include /usr/local/include
++        isEmpty(QMAKE_DEFAULT_LIBDIRS): QMAKE_DEFAULT_LIBDIRS = /lib /usr/lib
++    }
++
++    # cache() complains about undefined variables and doesn't persist empty ones.
++    !isEmpty(QMAKE_DEFAULT_INCDIRS): \
++        cache($${target_prefix}.INCDIRS, set stash, QMAKE_DEFAULT_INCDIRS)
++    !isEmpty(QMAKE_DEFAULT_LIBDIRS): \
++        cache($${target_prefix}.LIBDIRS, set stash, QMAKE_DEFAULT_LIBDIRS)
++    !isEmpty(QMAKE_DEFAULT_PATH): \
++        cache($${target_prefix}.PATH, set stash, QMAKE_DEFAULT_PATH)
++} else {
++    QMAKE_DEFAULT_INCDIRS = $$eval($${target_prefix}.INCDIRS)
++    QMAKE_DEFAULT_LIBDIRS = $$eval($${target_prefix}.LIBDIRS)
++    QMAKE_DEFAULT_PATH = $$eval($${target_prefix}.PATH)
++}
++
++msvc_cross {
++    qmake_inc_exp.name = INCLUDE
++    qmake_inc_exp.value = $$qtNmakePathList($$QMAKE_DEFAULT_INCDIRS)
++    qmake_lib_exp.name = LIB
++    qmake_lib_exp.value = $$qtNmakePathList($$QMAKE_DEFAULT_LIBDIRS)
++    qmake_path_exp.name = PATH
++    qmake_path_exp.value = $$qtNmakePathList($$QMAKE_DEFAULT_PATH)
++    QMAKE_EXPORTED_VARIABLES += qmake_inc_exp qmake_lib_exp qmake_path_exp
++}
++
++unset(target_prefix)
