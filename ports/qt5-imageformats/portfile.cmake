@@ -1,6 +1,6 @@
 set(VCPKG_POLICY_EMPTY_INCLUDE_FOLDER enabled)
-include(${CURRENT_INSTALLED_DIR}/share/qt5/qt_port_functions.cmake)
 
+include("${CURRENT_INSTALLED_DIR}/share/qt5/qt_port_functions.cmake")
 
 list(APPEND CORE_OPTIONS
     -no-tiff
