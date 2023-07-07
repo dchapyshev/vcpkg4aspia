@@ -89,7 +89,6 @@ endforeach()
 set(CORE_OPTIONS
     -confirm-license
     -opensource
-    -ltcg
     -verbose
 )
 
