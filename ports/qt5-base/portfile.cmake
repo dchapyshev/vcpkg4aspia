@@ -112,7 +112,6 @@ list(APPEND CORE_OPTIONS
     -system-doubleconversion
     -system-sqlite
     -qt-harfbuzz
-    -no-icu
     -no-angle
     -no-glib
     -no-libjpeg
@@ -158,6 +157,28 @@ find_library(DOUBLECONVERSION_DEBUG NAMES double-conversion PATHS "${CURRENT_INS
 find_library(SQLITE_RELEASE NAMES sqlite3 PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
 find_library(SQLITE_DEBUG NAMES sqlite3 sqlite3d PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 
+if (VCPKG_TARGET_IS_LINUX OR VCPKG_TARGET_IS_OSX)
+    find_library(ICUUC_RELEASE NAMES icuuc libicuuc PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+    find_library(ICUUC_DEBUG NAMES icuucd libicuucd icuuc libicuuc PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+
+    # Was installed in WSL but not on CI machine
+    #    find_library(ICULX_RELEASE NAMES iculx libiculx PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+    #    find_library(ICULX_DEBUG NAMES iculxd libiculxd iculx libiculx PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+
+    find_library(ICUIO_RELEASE NAMES icuio libicuio PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+    find_library(ICUIO_DEBUG NAMES icuiod libicuiod icuio libicuio PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+    find_library(ICUIN_RELEASE NAMES icui18n libicui18n icuin PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+    find_library(ICUIN_DEBUG NAMES icui18nd libicui18nd icui18n libicui18n icuin icuind PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+    find_library(ICUDATA_RELEASE NAMES icudata libicudata icudt PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+    find_library(ICUDATA_DEBUG NAMES icudatad libicudatad icudata libicudata icudtd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+    set(ICU_RELEASE "${ICUIN_RELEASE} ${ICULX_RELEASE} ${ICUUC_RELEASE} ${ICUIO_RELEASE} ${ICUDATA_RELEASE}")
+    set(ICU_DEBUG "${ICUIN_DEBUG} ${ICULX_DEBUG} ${ICUUC_DEBUG} ${ICUIO_DEBUG} ${ICUDATA_DEBUG}")
+    if(VCPKG_TARGET_IS_WINDOWS)
+        set(ICU_RELEASE "${ICU_RELEASE} -ladvapi32")
+        set(ICU_DEBUG "${ICU_DEBUG} -ladvapi32" )
+    endif()
+endif()
+
 find_library(FONTCONFIG_RELEASE NAMES fontconfig PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(FONTCONFIG_DEBUG NAMES fontconfig PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 find_library(EXPAT_RELEASE NAMES expat PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
@@ -192,9 +213,9 @@ set(DEBUG_OPTIONS
 
 if(VCPKG_TARGET_IS_WINDOWS)
     if(NOT ${VCPKG_LIBRARY_LINKAGE} STREQUAL "static")
-        list(APPEND CORE_OPTIONS -no-opengl -no-dbus)
+        list(APPEND CORE_OPTIONS -no-opengl -no-dbus -no-icu)
     else()
-        list(APPEND CORE_OPTIONS -no-opengl -no-dbus)
+        list(APPEND CORE_OPTIONS -no-opengl -no-dbus -no-icu)
     endif()
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE}"
@@ -204,22 +225,30 @@ if(VCPKG_TARGET_IS_WINDOWS)
             "SQLITE_LIBS=${SQLITE_DEBUG}"
         )
 elseif(VCPKG_TARGET_IS_LINUX)
-    list(APPEND CORE_OPTIONS -fontconfig -xcb-xlib -xcb -linuxfb)
+    list(APPEND CORE_OPTIONS -fontconfig -xcb-xlib -xcb -linuxfb -icu)
     list(APPEND RELEASE_OPTIONS
             "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
             "FONTCONFIG_LIBS=${FONTCONFIG_RELEASE} ${FREETYPE_RELEASE} ${EXPAT_RELEASE} -luuid"
+            "ICU_LIBS=${ICU_RELEASE}"
+            "QMAKE_LIBS_PRIVATE+=${ICU_RELEASE}"
         )
     list(APPEND DEBUG_OPTIONS
             "SQLITE_LIBS=${SQLITE_DEBUG} -ldl -lpthread"
             "FONTCONFIG_LIBS=${FONTCONFIG_DEBUG} ${FREETYPE_DEBUG} ${EXPAT_DEBUG} -luuid"
+            "ICU_LIBS=${ICU_DEBUG}"
+            "QMAKE_LIBS_PRIVATE+=${ICU_DEBUG}"
         )
 elseif(VCPKG_TARGET_IS_OSX)
     if (VCPKG_LIBRARY_LINKAGE STREQUAL "dynamic")
         # Avoid frameworks for vcpkg
-        list(APPEND CORE_OPTIONS -no-framework)
+        list(APPEND CORE_OPTIONS -no-framework -icu)
         # Such that Qt executables like moc find their libs. The default path is ../Frameworks
-        list(APPEND DEBUG_OPTIONS -R ${CURRENT_INSTALLED_DIR}/debug/lib)
-        list(APPEND RELEASE_OPTIONS -R ${CURRENT_INSTALLED_DIR}/lib)
+        list(APPEND DEBUG_OPTIONS -R ${CURRENT_INSTALLED_DIR}/debug/lib
+                "ICU_LIBS=${ICU_DEBUG}"
+                "QMAKE_LIBS_PRIVATE+=${ICU_DEBUG}")
+        list(APPEND RELEASE_OPTIONS -R ${CURRENT_INSTALLED_DIR}/lib
+                "ICU_LIBS=${ICU_RELEASE}"
+                "QMAKE_LIBS_PRIVATE+=${ICU_RELEASE}")
     endif()
 
     list(APPEND CORE_OPTIONS -fontconfig)

@@ -13,6 +13,10 @@
       "platform": "!windows"
     },
     "freetype",
+    {
+      "name": "icu",
+      "platform": "!windows"
+    },
     "libpng",
     {
       "name": "opengl",
