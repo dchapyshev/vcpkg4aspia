@@ -131,6 +131,7 @@ list(APPEND CORE_OPTIONS
     -no-feature-textmarkdownreader
     -no-feature-textmarkdownwriter
     -no-feature-imageformat_jpeg
+    -no-feature-imageformat_webp
     -no-feature-gestures
     -no-feature-sessionmanager
     -no-feature-statemachine
