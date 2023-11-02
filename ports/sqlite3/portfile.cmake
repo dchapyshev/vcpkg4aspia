@@ -4,7 +4,7 @@ string(REGEX REPLACE "^([0-9]+),0*([0-9][0-9]),0*([0-9][0-9]),0*([0-9][0-9])," "
 vcpkg_download_distfile(ARCHIVE
     URLS "https://sqlite.org/2023/sqlite-amalgamation-${SQLITE_VERSION}.zip"
     FILENAME "sqlite-amalgamation-${SQLITE_VERSION}.zip"
-    SHA512 76416dc40dd15611f59d7209087a08c6cf1b7584dee34da4ce11b75acd7f608d794747a7ed87c3ffe16b237699279c2da8f85b009a379e108d39f33bd727e1e1
+    SHA512 f17810f3b68b7f77a174503a863385a17bac0e9c819b9813cb75597cbd229ae8ad0b545410fc320669f377e79ab8412bbff8863f197d0f804c3a05b573df57e9
 )
 
 vcpkg_extract_source_archive(
@@ -25,15 +25,21 @@ else()
     set(SQLITE_API "")
 endif()
 
-vcpkg_check_features(OUT_FEATURE_OPTIONS Unused
+vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
+    FEATURES
+        fts5                SQLITE_ENABLE_FTS5
+        math                SQLITE_ENABLE_MATH_FUNCTIONS
+        zlib                WITH_ZLIB
+    INVERTED_FEATURES
+        tool                SQLITE3_SKIP_TOOLS
+)
+vcpkg_check_features(OUT_FEATURE_OPTIONS none # only using the script-mode side-effects
     FEATURES
         dbstat              SQLITE_ENABLE_DBSTAT_VTAB
         fts3                SQLITE_ENABLE_FTS3
         fts4                SQLITE_ENABLE_FTS4
-        fts5                SQLITE_ENABLE_FTS5
         memsys3             SQLITE_ENABLE_MEMSYS3
         memsys5             SQLITE_ENABLE_MEMSYS5
-        math                SQLITE_ENABLE_MATH_FUNCTIONS
         limit               SQLITE_ENABLE_UPDATE_DELETE_LIMIT
         rtree               SQLITE_ENABLE_RTREE
         session             SQLITE_ENABLE_SESSION
@@ -56,13 +62,6 @@ endif()
 file(COPY "${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt" DESTINATION "${SOURCE_PATH}")
 file(COPY "${CMAKE_CURRENT_LIST_DIR}/sqlite3.pc.in" DESTINATION "${SOURCE_PATH}")
 configure_file("${CMAKE_CURRENT_LIST_DIR}/sqlite3-vcpkg-config.h.in" "${SOURCE_PATH}/sqlite3-vcpkg-config.h" @ONLY)
-
-vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
-    FEATURES
-        zlib                WITH_ZLIB
-    INVERTED_FEATURES
-        tool                SQLITE3_SKIP_TOOLS
-)
 
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
