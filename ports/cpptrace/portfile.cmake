@@ -2,7 +2,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO jeremy-rifkin/cpptrace
     REF "v${VERSION}"
-    SHA512 0d3cfa3f5b12034a111791dad772d4362f2a0071f16beff000edccf022bdce167926c0cb95a40aaffb9820f01bcea6559ceacf183525a85b9018e93e7f6e58b2
+    SHA512 c5ebd1a733e22006abe2ef2b5e65a9f967ef2a433194d1c2dbed2dea7a81034a56717ad54698eaad20b3c53b941a2766587dc32936b3703ef87fda29eafc5dbf
     HEAD_REF main
 )
 

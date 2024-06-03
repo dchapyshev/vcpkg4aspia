@@ -52,16 +52,14 @@ endif()
 qt_download_submodule(  OUT_SOURCE_PATH SOURCE_PATH
                         PATCHES
                             # CVE fixes from https://download.qt.io/official_releases/qt/5.15/
-                            patches/CVE-2023-24607-qtbase-5.15.diff
-                            patches/CVE-2023-32762-qtbase-5.15.diff
                             patches/CVE-2023-32763-qtbase-5.15.diff
-                            patches/CVE-2023-33285-qtbase-5.15.diff
                             patches/CVE-2023-34410-qtbase-5.15.diff
                             patches/CVE-2023-37369-qtbase-5.15.diff
                             patches/CVE-2023-38197-qtbase-5.15.diff
                             patches/CVE-2023-43114-5.15.patch
                             patches/0001-CVE-2023-51714-qtbase-5.15.diff
                             patches/0002-CVE-2023-51714-qtbase-5.15.diff
+                            patches/CVE-2024-25580-qtbase-5.15.diff
 
                             patches/winmain_pro.patch          #Moves qtmain to manual-link
                             patches/windows_prf.patch          #fixes the qtmain dependency due to the above move
@@ -142,6 +140,7 @@ list(APPEND CORE_OPTIONS
     -no-sql-oci
     -no-sql-ibase
     -no-sql-db2
+    -no-feature-gssapi
 )
 
 find_library(ZLIB_RELEASE NAMES z zlib PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
