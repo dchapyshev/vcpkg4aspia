@@ -4,13 +4,12 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO webmproject/libvpx
     REF "v${VERSION}"
-    SHA512 49706838563c92fab7334376848d0f374efcbc1729ef511e967c908fd2ecd40e8d197f1d85da6553b3a7026bdbc17e5a76595319858af26ce58cb9a4c3854897
+    SHA512 724150c5cafa934e0a8dd9aebbab8afd25aa4f584734e0de37837ec2e8bdcbd9390acd7f883665be7ecdc27af93afda737a4dea7e3bd7531abffcc5bb7c2c7d2
     HEAD_REF master
     PATCHES
         0002-Fix-nasm-debug-format-flag.patch
         0003-add-uwp-v142-and-v143-support.patch
         0004-remove-library-suffixes.patch
-        0005-fix-arm64-build.patch # Upstream commit: https://github.com/webmproject/libvpx/commit/858a8c611f4c965078485860a6820e2135e6611b
 )
 
 if(CMAKE_HOST_WIN32)
