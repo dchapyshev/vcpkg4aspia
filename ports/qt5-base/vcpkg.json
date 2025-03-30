@@ -1,6 +1,7 @@
 {
   "name": "qt5-base",
-  "version": "5.15.15",
+  "version": "5.15.16",
+  "port-version": 1,
   "description": "Qt Base provides the basic non-GUI functionality required by all Qt applications.",
   "homepage": "https://www.qt.io/",
   "license": null,
@@ -20,16 +21,15 @@
       "platform": "!windows"
     },
     "freetype",
-    {
-      "name": "icu",
-      "platform": "!windows"
-    },
     "libpng",
     {
       "name": "opengl",
       "platform": "!windows"
     },
-    "pcre2",
+    {
+      "name": "pcre2",
+      "default-features": false
+    },
     {
       "name": "qt5-base",
       "host": true,
