@@ -23,6 +23,7 @@ set(${PORT}_PATCHES
         fix_deploy_windows.patch
         fix-link-lib-discovery.patch
         macdeployqt-symlinks.patch
+        aspia.patch
 )
  
 if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
@@ -463,7 +464,7 @@ if(installed_to_host)
 endif()
 set(_file "${CMAKE_CURRENT_LIST_DIR}/qt.conf.in")
 set(REL_PATH "")
-set(REL_HOST_TO_DATA "\${CURRENT_INSTALLED_DIR}/")
+set(REL_HOST_TO_DATA "${CURRENT_INSTALLED_DIR}")
 configure_file("${_file}" "${CURRENT_PACKAGES_DIR}/tools/Qt6/qt_release.conf" @ONLY) # For vcpkg-qmake
 set(BACKUP_CURRENT_INSTALLED_DIR "${CURRENT_INSTALLED_DIR}")
 set(BACKUP_CURRENT_HOST_INSTALLED_DIR "${CURRENT_HOST_INSTALLED_DIR}")
@@ -472,14 +473,25 @@ set(CURRENT_HOST_INSTALLED_DIR "${CURRENT_INSTALLED_DIR}${installed_to_host}")
 
 ## Configure installed qt.conf
 set(REL_HOST_TO_DATA "${host_to_installed}")
-configure_file("${_file}" "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/qt.conf")
+configure_file("${_file}" "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/_qt.conf")
 set(REL_PATH debug/)
-configure_file("${_file}" "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/qt.debug.conf")
+configure_file("${_file}" "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/_qt.debug.conf")
 
 set(CURRENT_INSTALLED_DIR "${BACKUP_CURRENT_INSTALLED_DIR}")
 set(CURRENT_HOST_INSTALLED_DIR "${BACKUP_CURRENT_HOST_INSTALLED_DIR}")
-set(REL_HOST_TO_DATA "\${CURRENT_INSTALLED_DIR}/")
+set(REL_HOST_TO_DATA "${CURRENT_INSTALLED_DIR}")
 configure_file("${_file}" "${CURRENT_PACKAGES_DIR}/tools/Qt6/qt_debug.conf" @ONLY) # For vcpkg-qmake
+
+file(COPY "${CURRENT_PACKAGES_DIR}/tools/Qt6/qt_release.conf" DESTINATION "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin")
+file(RENAME "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/qt_release.conf" "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/qt.conf")
+
+if(VCPKG_TARGET_IS_WINDOWS)
+    file(COPY "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/qmake.exe" DESTINATION "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/debug")
+else()
+    file(COPY "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/qmake" DESTINATION "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/debug")
+endif()
+file(COPY "${CURRENT_PACKAGES_DIR}/tools/Qt6/qt_debug.conf" DESTINATION "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/debug")
+file(RENAME "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/debug/qt_debug.conf" "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/debug/qt.conf")
 
 set(target_qt_conf "${CURRENT_PACKAGES_DIR}/tools/Qt6/bin/target_qt.conf")
 if(EXISTS "${target_qt_conf}")
