@@ -1,0 +1,77 @@
+diff --git "a/CMakeLists.txt" "b/CMakeLists.txt"
+index 61288ca..2054e46 100644
+--- "a/CMakeLists.txt"
++++ "b/CMakeLists.txt"
+@@ -99,20 +99,58 @@ if(NOT MSVC)
+   endif()
+ 
+   if(arch_lowercase STREQUAL "aarch64" OR arch_lowercase STREQUAL "arm64")
+-    # Enable AArch64 Neon dot-product and i8mm kernels.
+-    add_library(${ly_lib_name}_neon64 OBJECT
+-      ${ly_src_dir}/compare_neon64.cc
+-      ${ly_src_dir}/rotate_neon64.cc
+-      ${ly_src_dir}/row_neon64.cc
+-      ${ly_src_dir}/scale_neon64.cc)
+-    target_compile_options(${ly_lib_name}_neon64 PRIVATE -march=armv8-a+dotprod+i8mm)
+-    list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_neon64>)
+-
+-    # Enable AArch64 SVE kernels.
+-    add_library(${ly_lib_name}_sve OBJECT
+-      ${ly_src_dir}/row_sve.cc)
+-    target_compile_options(${ly_lib_name}_sve PRIVATE -march=armv9-a+sve2)
+-    list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_sve>)
++    # Check for Neon64 support.
++    set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
++    set(OLD_CMAKE_TRY_COMPILE_TARGET_TYPE ${CMAKE_TRY_COMPILE_TARGET_TYPE})
++    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -march=armv8-a+dotprod+i8mm")
++    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
++    check_c_source_compiles("
++#include <arm_neon.h>
++int main(void) {
++  float32x2_t a = vdup_n_f32(1.0f);
++  return (int)vget_lane_f32(a, 0);
++}
++    " CAN_COMPILE_NEON64)
++    set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
++    set(CMAKE_TRY_COMPILE_TARGET_TYPE ${OLD_CMAKE_TRY_COMPILE_TARGET_TYPE})
++
++    if (CAN_COMPILE_NEON64)
++      # Enable AArch64 Neon dot-product and i8mm kernels.
++      add_library(${ly_lib_name}_neon64 OBJECT
++        ${ly_src_dir}/compare_neon64.cc
++        ${ly_src_dir}/rotate_neon64.cc
++        ${ly_src_dir}/row_neon64.cc
++        ${ly_src_dir}/scale_neon64.cc)
++      target_compile_options(${ly_lib_name}_neon64 PRIVATE -march=armv8-a+dotprod+i8mm)
++      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_neon64>)
++    else()
++      add_definitions(-DLIBYUV_DISABLE_NEON64)
++    endif()
++
++    # Check for SVE support.
++    set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
++    set(OLD_CMAKE_TRY_COMPILE_TARGET_TYPE ${CMAKE_TRY_COMPILE_TARGET_TYPE})
++    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -march=armv9-a+sve2")
++    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
++    check_c_source_compiles("
++#include <arm_sve.h>
++int main(void) {
++  svbool_t pg = svptrue_b8();
++  return (int)svcntb();
++}
++    " CAN_COMPILE_SVE)
++    set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
++    set(CMAKE_TRY_COMPILE_TARGET_TYPE ${OLD_CMAKE_TRY_COMPILE_TARGET_TYPE})
++
++    if (CAN_COMPILE_SVE)
++      # Enable AArch64 SVE kernels.
++      add_library(${ly_lib_name}_sve OBJECT
++        ${ly_src_dir}/row_sve.cc)
++      target_compile_options(${ly_lib_name}_sve PRIVATE -march=armv9-a+sve2)
++      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_sve>)
++    else()
++      add_definitions(-DLIBYUV_DISABLE_SVE)
++    endif()
+ 
+     set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+     set(OLD_CMAKE_TRY_COMPILE_TARGET_TYPE ${CMAKE_TRY_COMPILE_TARGET_TYPE})
