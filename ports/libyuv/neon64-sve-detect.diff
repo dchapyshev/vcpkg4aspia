@@ -1,5 +1,5 @@
 diff --git "a/CMakeLists.txt" "b/CMakeLists.txt"
-index 61288ca..2054e46 100644
+index 61288ca..979821e 100644
 --- "a/CMakeLists.txt"
 +++ "b/CMakeLists.txt"
 @@ -99,20 +99,58 @@ if(NOT MSVC)
@@ -26,10 +26,10 @@ index 61288ca..2054e46 100644
 +    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -march=armv8-a+dotprod+i8mm")
 +    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 +    check_c_source_compiles("
-+#include <arm_neon.h>
-+int main(void) {
-+  float32x2_t a = vdup_n_f32(1.0f);
-+  return (int)vget_lane_f32(a, 0);
++#if !defined(__ARM_FEATURE_MATMUL_INT8) || !defined(__ARM_FEATURE_DOTPROD)
++#error DOTPROD and INT8 not supported
++#endif
++int main(){return 0;}
 +}
 +    " CAN_COMPILE_NEON64)
 +    set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
