@@ -1,8 +1,8 @@
 diff --git "a/CMakeLists.txt" "b/CMakeLists.txt"
-index 61288ca..979821e 100644
+index 61288ca..b1fcfde 100644
 --- "a/CMakeLists.txt"
 +++ "b/CMakeLists.txt"
-@@ -99,20 +99,58 @@ if(NOT MSVC)
+@@ -99,20 +99,68 @@ if(NOT MSVC)
    endif()
  
    if(arch_lowercase STREQUAL "aarch64" OR arch_lowercase STREQUAL "arm64")
@@ -46,6 +46,16 @@ index 61288ca..979821e 100644
 +      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_neon64>)
 +    else()
 +      add_definitions(-DLIBYUV_DISABLE_NEON64)
++
++      # Enable Arm Neon kernels.
++      add_definitions(-DLIBYUV_NEON=1)
++      add_library(${ly_lib_name}_neon OBJECT
++        ${ly_src_dir}/compare_neon.cc
++        ${ly_src_dir}/rotate_neon.cc
++        ${ly_src_dir}/row_neon.cc
++        ${ly_src_dir}/scale_neon.cc)
++      target_compile_options(${ly_lib_name}_neon PRIVATE -mfpu=neon)
++      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_neon>)
 +    endif()
 +
 +    # Check for SVE support.
