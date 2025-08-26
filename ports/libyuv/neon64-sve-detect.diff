@@ -1,8 +1,8 @@
 diff --git "a/CMakeLists.txt" "b/CMakeLists.txt"
-index 61288ca..dfe3752 100644
+index 61288ca..e66ad0a 100644
 --- "a/CMakeLists.txt"
 +++ "b/CMakeLists.txt"
-@@ -99,20 +99,67 @@ if(NOT MSVC)
+@@ -99,20 +99,49 @@ if(NOT MSVC)
    endif()
  
    if(arch_lowercase STREQUAL "aarch64" OR arch_lowercase STREQUAL "arm64")
@@ -44,8 +44,15 @@ index 61288ca..dfe3752 100644
 +        ${ly_src_dir}/scale_neon64.cc)
 +      target_compile_options(${ly_lib_name}_neon64 PRIVATE -march=armv8-a+dotprod+i8mm)
 +      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_neon64>)
++
++      # Enable AArch64 SVE kernels.
++      add_library(${ly_lib_name}_sve OBJECT
++        ${ly_src_dir}/row_sve.cc)
++      target_compile_options(${ly_lib_name}_sve PRIVATE -march=armv9-a+sve2)
++      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_sve>)
 +    else()
 +      add_definitions(-DLIBYUV_DISABLE_NEON64)
++      add_definitions(-DLIBYUV_DISABLE_SVE)
 +
 +      # Enable Arm Neon kernels (Raspberry Pi does not support Neon64).
 +      add_definitions(-DLIBYUV_NEON=1)
@@ -55,31 +62,6 @@ index 61288ca..dfe3752 100644
 +        ${ly_src_dir}/row_neon.cc
 +        ${ly_src_dir}/scale_neon.cc)
 +      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_neon>)
-+    endif()
-+
-+    # Check for SVE support.
-+    set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
-+    set(OLD_CMAKE_TRY_COMPILE_TARGET_TYPE ${CMAKE_TRY_COMPILE_TARGET_TYPE})
-+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -march=armv9-a+sve2")
-+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-+    check_c_source_compiles("
-+#include <arm_sve.h>
-+int main(void) {
-+  svbool_t pg = svptrue_b8();
-+  return (int)svcntb();
-+}
-+    " CAN_COMPILE_SVE)
-+    set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
-+    set(CMAKE_TRY_COMPILE_TARGET_TYPE ${OLD_CMAKE_TRY_COMPILE_TARGET_TYPE})
-+
-+    if (CAN_COMPILE_SVE)
-+      # Enable AArch64 SVE kernels.
-+      add_library(${ly_lib_name}_sve OBJECT
-+        ${ly_src_dir}/row_sve.cc)
-+      target_compile_options(${ly_lib_name}_sve PRIVATE -march=armv9-a+sve2)
-+      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_sve>)
-+    else()
-+      add_definitions(-DLIBYUV_DISABLE_SVE)
 +    endif()
  
      set(OLD_CMAKE_REQURED_FLAGS ${CMAKE_REQUIRED_FLAGS})
