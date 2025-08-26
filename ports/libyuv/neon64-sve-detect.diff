@@ -1,8 +1,8 @@
 diff --git "a/CMakeLists.txt" "b/CMakeLists.txt"
-index 61288ca..6689a34 100644
+index 61288ca..dfe3752 100644
 --- "a/CMakeLists.txt"
 +++ "b/CMakeLists.txt"
-@@ -99,20 +99,68 @@ if(NOT MSVC)
+@@ -99,20 +99,67 @@ if(NOT MSVC)
    endif()
  
    if(arch_lowercase STREQUAL "aarch64" OR arch_lowercase STREQUAL "arm64")
@@ -54,7 +54,6 @@ index 61288ca..6689a34 100644
 +        ${ly_src_dir}/rotate_neon.cc
 +        ${ly_src_dir}/row_neon.cc
 +        ${ly_src_dir}/scale_neon.cc)
-+      target_compile_options(${ly_lib_name}_neon)
 +      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_neon>)
 +    endif()
 +
