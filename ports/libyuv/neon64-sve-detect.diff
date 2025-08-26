@@ -1,5 +1,5 @@
 diff --git "a/CMakeLists.txt" "b/CMakeLists.txt"
-index 61288ca..b1fcfde 100644
+index 61288ca..6689a34 100644
 --- "a/CMakeLists.txt"
 +++ "b/CMakeLists.txt"
 @@ -99,20 +99,68 @@ if(NOT MSVC)
@@ -47,14 +47,14 @@ index 61288ca..b1fcfde 100644
 +    else()
 +      add_definitions(-DLIBYUV_DISABLE_NEON64)
 +
-+      # Enable Arm Neon kernels.
++      # Enable Arm Neon kernels (Raspberry Pi does not support Neon64).
 +      add_definitions(-DLIBYUV_NEON=1)
 +      add_library(${ly_lib_name}_neon OBJECT
 +        ${ly_src_dir}/compare_neon.cc
 +        ${ly_src_dir}/rotate_neon.cc
 +        ${ly_src_dir}/row_neon.cc
 +        ${ly_src_dir}/scale_neon.cc)
-+      target_compile_options(${ly_lib_name}_neon PRIVATE -mfpu=neon)
++      target_compile_options(${ly_lib_name}_neon)
 +      list(APPEND ly_lib_parts $<TARGET_OBJECTS:${ly_lib_name}_neon>)
 +    endif()
 +
