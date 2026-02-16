@@ -7,8 +7,7 @@
  src/corelib/thread/qmutex_p.h                      |   2 +
  src/corelib/thread/qmutex_win.cpp                  |  30 ++
  src/corelib/thread/qthread_win.cpp                 |  58 ++-
- src/gui/rhi/qrhid3d11.cpp                          |  35 +-
- src/gui/rhi/qrhid3d11_p.h                          |   1 +
+ src/gui/rhi/qrhid3d11.cpp                          |  21 +-
  src/gui/rhi/qrhid3d12.cpp                          |  43 ++-
  src/gui/text/windows/qwindowsfontdatabasebase.cpp  |  11 +-
  src/network/kernel/qdnslookup_win.cpp              | 206 +++++-----
@@ -16,7 +15,7 @@
  src/plugins/platforms/windows/qwindowscontext.cpp  | 158 +++++++-
  src/plugins/platforms/windows/qwindowscontext.h    |  93 +++++
  src/plugins/platforms/windows/qwindowsdrag.cpp     |   8 +-
- .../platforms/windows/qwindowsintegration.cpp      |  10 +-
+ .../platforms/windows/qwindowsintegration.cpp      |   6 +
  .../platforms/windows/qwindowskeymapper.cpp        |  13 +-
  .../platforms/windows/qwindowspointerhandler.cpp   |  55 ++-
  src/plugins/platforms/windows/qwindowsscreen.cpp   |  27 +-
@@ -28,7 +27,7 @@
  .../windows/uiautomation/qwindowsuiawrapper_p.h    |  57 +++
  src/plugins/platforms/windows/vxkex.h              | 426 +++++++++++++++++++++
  src/widgets/styles/qwindowsstyle.cpp               |  37 +-
- 30 files changed, 1435 insertions(+), 313 deletions(-)
+ 29 files changed, 1417 insertions(+), 312 deletions(-)
 
 diff --git a/mkspecs/features/qt.prf b/mkspecs/features/qt.prf
 index 3b71eea6..a1eb2a21 100644
@@ -294,7 +293,7 @@ index 88ba6dc8..c544d972 100644
      emit thr->started(QThread::QPrivateSignal());
      QThread::setTerminationEnabled(true);
 diff --git a/src/gui/rhi/qrhid3d11.cpp b/src/gui/rhi/qrhid3d11.cpp
-index 9e2e0c4e..eae05a0e 100644
+index 9e2e0c4e..784ab693 100644
 --- a/src/gui/rhi/qrhid3d11.cpp
 +++ b/src/gui/rhi/qrhid3d11.cpp
 @@ -12,6 +12,8 @@
@@ -334,44 +333,6 @@ index 9e2e0c4e..eae05a0e 100644
      return result;
  }
  
-@@ -5103,6 +5114,15 @@ static const DXGI_FORMAT DEFAULT_SRGB_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
- 
- bool QD3D11SwapChain::createOrResize()
- {
-+    if (IsWindows10OrGreater())
-+    {
-+        // continue
-+    }
-+    else
-+    {
-+        return createOrResizeWin7();
-+    }
-+
-     // Can be called multiple times due to window resizes - that is not the
-     // same as a simple destroy+create (as with other resources). Just need to
-     // resize the buffers then.
-@@ -5427,4 +5447,9 @@ bool QD3D11SwapChain::createOrResize()
-     return true;
- }
- 
-+bool QD3D11SwapChain::createOrResizeWin7()
-+{
-+    return false; // not implemented yet ;(
-+}
-+
- QT_END_NAMESPACE
-diff --git a/src/gui/rhi/qrhid3d11_p.h b/src/gui/rhi/qrhid3d11_p.h
-index 44ad7017..7f232f1a 100644
---- a/src/gui/rhi/qrhid3d11_p.h
-+++ b/src/gui/rhi/qrhid3d11_p.h
-@@ -596,6 +596,7 @@ struct QD3D11SwapChain : public QRhiSwapChain
- 
-     QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
-     bool createOrResize() override;
-+    bool createOrResizeWin7();
- 
-     void releaseBuffers();
-     bool newColorBuffer(const QSize &size, DXGI_FORMAT format, DXGI_SAMPLE_DESC sampleDesc,
 diff --git a/src/gui/rhi/qrhid3d12.cpp b/src/gui/rhi/qrhid3d12.cpp
 index 0662c53e..1039914d 100644
 --- a/src/gui/rhi/qrhid3d12.cpp
@@ -1255,33 +1216,22 @@ index 5d3a47c2..563b22a8 100644
  
                  if (pointerInfo.pointerFlags & POINTER_FLAG_PRIMARY) {
 diff --git a/src/plugins/platforms/windows/qwindowsintegration.cpp b/src/plugins/platforms/windows/qwindowsintegration.cpp
-index a9fcf711..3a08bd35 100644
+index a9fcf711..821a9e60 100644
 --- a/src/plugins/platforms/windows/qwindowsintegration.cpp
 +++ b/src/plugins/platforms/windows/qwindowsintegration.cpp
-@@ -140,6 +140,7 @@ static inline unsigned parseOptions(const QStringList &paramList,
+@@ -140,6 +140,12 @@ static inline unsigned parseOptions(const QStringList &paramList,
                                      DarkModeHandling *darkModeHandling)
  {
      unsigned options = 0;
 +
++    if (QOperatingSystemVersion::current() < QOperatingSystemVersion(QOperatingSystemVersion::Windows, 10, 0, 17763)) {
++        // https://github.com/crystalidea/qt6windows7/issues/26
++        options |= QWindowsIntegration::DontUseDirectWriteFonts;
++    }
++
      for (const QString &param : paramList) {
          if (param.startsWith(u"fontengine=")) {
              if (param.endsWith(u"gdi")) {
-@@ -485,7 +486,14 @@ QPlatformFontDatabase *QWindowsIntegration::fontDatabase() const
-         else
- #endif // QT_NO_FREETYPE
- #if QT_CONFIG(directwrite3)
--        if (!(d->m_options & (QWindowsIntegration::FontDatabaseGDI | QWindowsIntegration::DontUseDirectWriteFonts)))
-+
-+        /* IDWriteFontFace3 is only reportedly available starting with Windows 10. This change is necessary starting
-+        with Qt 6.8, where DirectWrite is used by default to populate the font database. 
-+        More info: https://github.com/videolan/vlc/blob/master/contrib/src/qt/0001-Use-DirectWrite-font-database-only-with-Windows-10-a.patch
-+        */
-+
-+        if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows10 &&
-+            !(d->m_options & (QWindowsIntegration::FontDatabaseGDI | QWindowsIntegration::DontUseDirectWriteFonts)))
-             d->m_fontDatabase = new QWindowsDirectWriteFontDatabase;
-         else
- #endif
 diff --git a/src/plugins/platforms/windows/qwindowskeymapper.cpp b/src/plugins/platforms/windows/qwindowskeymapper.cpp
 index 5b8e4e58..5c84b477 100644
 --- a/src/plugins/platforms/windows/qwindowskeymapper.cpp
