@@ -1,18 +1,564 @@
-diff --git a/mkspecs/features/qt.prf b/mkspecs/features/qt.prf
-index 3b71eea6..a1eb2a21 100644
---- a/mkspecs/features/qt.prf
-+++ b/mkspecs/features/qt.prf
-@@ -174,7 +174,7 @@ import_plugins {
-             # Respect target config if Qt provides both debug and release versions
-             # of each plugin. Otherwise, respect what Qt was configured with.
-             qtConfig(debug_and_release): config_variable = CONFIG
--            else: config_variable = QT_CONFIG
-+            else: config_variable = CONFIG
+ src/corelib/CMakeLists.txt                         |   4 +-
+ src/corelib/global/qlegacyshims_win_p.h            | 482 +++++++++++++++++++++
+ src/corelib/io/qstandardpaths_win.cpp              |   8 +-
+ src/corelib/kernel/qeventdispatcher_win.cpp        |   9 +-
+ src/corelib/kernel/qfunctions_win.cpp              |  10 +-
+ src/corelib/text/qlocale_win.cpp                   |  21 +-
+ src/corelib/text/qstringconverter.cpp              |   9 +-
+ src/corelib/thread/qfutex_p.h                      |   2 -
+ src/corelib/thread/qmutex.cpp                      |   4 +-
+ src/corelib/thread/qmutex.h                        |   2 +-
+ src/corelib/thread/qmutex_p.h                      |   2 +
+ src/corelib/thread/qmutex_win.cpp                  |  30 ++
+ src/corelib/thread/qthread_win.cpp                 | 124 ++++--
+ src/gui/rhi/qdxgihdrinfo.cpp                       |  18 +-
+ src/gui/rhi/qdxgivsyncservice.cpp                  |   9 +-
+ src/gui/rhi/qrhid3d11.cpp                          | 195 ++++++++-
+ src/gui/rhi/qrhid3d11_p.h                          |   3 +-
+ src/gui/rhi/qrhid3d12.cpp                          |  52 ++-
+ src/gui/text/windows/qwindowsfontdatabasebase.cpp  |   9 +-
+ src/network/kernel/qdnslookup_win.cpp              | 120 +++--
+ src/plugins/platforms/direct2d/CMakeLists.txt      |   1 +
+ src/plugins/platforms/windows/CMakeLists.txt       |   1 +
+ src/plugins/platforms/windows/qwin10helpers.cpp    |  32 +-
+ src/plugins/platforms/windows/qwindowscontext.cpp  | 181 +++++++-
+ src/plugins/platforms/windows/qwindowscontext.h    |  93 ++++
+ src/plugins/platforms/windows/qwindowsdrag.cpp     |   2 +-
+ .../platforms/windows/qwindowsintegration.cpp      |   8 +-
+ .../platforms/windows/qwindowskeymapper.cpp        |  12 +-
+ .../platforms/windows/qwindowspointerhandler.cpp   |  17 +-
+ src/plugins/platforms/windows/qwindowsscreen.cpp   |   7 +-
+ src/plugins/platforms/windows/qwindowstheme.cpp    |  80 +++-
+ src/plugins/platforms/windows/qwindowswindow.cpp   |  28 +-
+ .../uiautomation/qwindowsuiaaccessibility.cpp      |   9 +-
+ .../uiautomation/qwindowsuiamainprovider.cpp       |  29 +-
+ .../windows/uiautomation/qwindowsuiawrapper_p.cpp  | 105 +++++
+ .../windows/uiautomation/qwindowsuiawrapper_p.h    |  62 +++
+ .../styles/modernwindows/qwindowsvistastyle.cpp    |  16 +
+ .../styles/modernwindows/qwindowsvistastyle_p_p.h  |   1 +
+ src/widgets/styles/qwindowsstyle.cpp               |  37 +-
+ 39 files changed, 1623 insertions(+), 211 deletions(-)
+
+diff --git a/src/corelib/CMakeLists.txt b/src/corelib/CMakeLists.txt
+index 36fbfede..4f5be0fe 100644
+--- a/src/corelib/CMakeLists.txt
++++ b/src/corelib/CMakeLists.txt
+@@ -558,7 +558,7 @@ qt_internal_extend_target(Core CONDITION QT_FEATURE_animation
+ # from the wrong DLL at runtime and crash!
+ qt_internal_extend_target(Core CONDITION QT_FEATURE_thread AND WIN32
+     SOURCES
+-        thread/qfutex_win_p.h
++        thread/qmutex_win.cpp
+         thread/qwaitcondition_win.cpp
+     LIBRARIES
+         synchronization
+@@ -571,6 +571,7 @@ qt_internal_extend_target(Core CONDITION CYGWIN
  
-             plug_name = $$QMAKE_PREFIX_STATICLIB$${plug}$$qtPlatformTargetSuffix($$config_variable).$$QMAKE_EXTENSION_STATICLIB
-             plug_path = $$eval(QT_PLUGIN.$${plug}.PATH)
+ qt_internal_extend_target(Core CONDITION WIN32
+     SOURCES
++        global/qlegacyshims_win_p.h
+         global/qoperatingsystemversion_win.cpp global/qoperatingsystemversion_win_p.h
+         global/qt_windows.h
+         io/qfilesystemengine_win.cpp
+@@ -1482,6 +1483,7 @@ qt_internal_extend_target(Core CONDITION QT_FEATURE_ctf
+ set_source_files_properties(
+     thread/qmutex_mac.cpp
+     thread/qmutex_unix.cpp
++    thread/qmutex_win.cpp
+     PROPERTIES HEADER_FILE_ONLY ON)
+ 
+ # Remove QT_NO_CAST_TO_ASCII to ensure that the symbols are included in the library.
+diff --git a/src/corelib/global/qlegacyshims_win_p.h b/src/corelib/global/qlegacyshims_win_p.h
+new file mode 100644
+index 00000000..55e6620f
+--- /dev/null
++++ b/src/corelib/global/qlegacyshims_win_p.h
+@@ -0,0 +1,482 @@
++// Copyright (C) 2016 The Qt Company Ltd.
++// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
++
++#ifndef QLEGACYSHIMS_P_H
++#define QLEGACYSHIMS_P_H
++
++#include <shtypes.h>
++#include <winuser.h>
++#include <windef.h>
++#include <shellscalingapi.h>
++#include <winternl.h>
++
++//
++//  W A R N I N G
++//  -------------
++//
++// This file is not part of the Qt API.  It exists purely as an
++// implementation detail.  This header file may change from version to
++// version without notice, or even be removed.
++//
++// We mean it.
++//
++
++#define MDT_MAXIMUM_DPI 3
++
++namespace QLegacyShims {
++	static INT WINAPI GetSystemMetricsForDpi(
++		IN  INT     Index,
++		IN  UINT    Dpi)
++	{
++		INT Value;
++
++		Value = GetSystemMetrics(Index);
++
++		switch (Index) {
++		case SM_CXVSCROLL:
++		case SM_CYHSCROLL:
++		case SM_CYCAPTION:
++		case SM_CYVTHUMB:
++		case SM_CXHTHUMB:
++		case SM_CXICON:
++		case SM_CYICON:
++		case SM_CXCURSOR:
++		case SM_CYCURSOR:
++		case SM_CYMENU:
++		case SM_CYVSCROLL:
++		case SM_CXHSCROLL:
++		case SM_CXMIN:
++		case SM_CXMINTRACK:
++		case SM_CYMIN:
++		case SM_CYMINTRACK:
++		case SM_CXSIZE:
++		case SM_CXFRAME:
++		case SM_CYFRAME:
++		case SM_CXICONSPACING:
++		case SM_CYICONSPACING:
++		case SM_CXSMICON:
++		case SM_CYSMICON:
++		case SM_CYSMCAPTION:
++		case SM_CXSMSIZE:
++		case SM_CYSMSIZE:
++		case SM_CXMENUSIZE:
++		case SM_CYMENUSIZE:
++		case SM_CXMENUCHECK:
++		case SM_CYMENUCHECK:
++			// These are pixel values that have to be scaled according to DPI.
++			Value *= Dpi;
++			Value /= USER_DEFAULT_SCREEN_DPI;
++			break;
++		}
++
++		return Value;
++	}
++	
++	static BOOL WINAPI SystemParametersInfoForDpi(
++		IN      UINT    Action,
++		IN      UINT    Parameter,
++		IN OUT  PVOID   Data,
++		IN      UINT    WinIni,
++		IN      UINT    Dpi)
++	{
++		switch (Action) {
++		case SPI_GETICONTITLELOGFONT:
++			return SystemParametersInfo(Action, Parameter, Data, 0);
++		case SPI_GETICONMETRICS:
++			{
++				BOOL Success;
++				PICONMETRICS IconMetrics;
++
++				Success = SystemParametersInfo(Action, Parameter, Data, 0);
++
++				if (Success) {
++					IconMetrics = (PICONMETRICS) Data;
++
++					IconMetrics->iHorzSpacing *= Dpi;
++					IconMetrics->iVertSpacing *= Dpi;
++					IconMetrics->iHorzSpacing /= USER_DEFAULT_SCREEN_DPI;
++					IconMetrics->iVertSpacing /= USER_DEFAULT_SCREEN_DPI;
++				}
++
++				return Success;
++			}
++		case SPI_GETNONCLIENTMETRICS:
++			{
++				BOOL Success;
++				PNONCLIENTMETRICS NonClientMetrics;
++
++				Success = SystemParametersInfo(Action, Parameter, Data, 0);
++
++				if (Success) {
++					NonClientMetrics = (PNONCLIENTMETRICS) Data;
++
++					NonClientMetrics->iBorderWidth          *= Dpi;
++					NonClientMetrics->iScrollWidth          *= Dpi;
++					NonClientMetrics->iScrollHeight         *= Dpi;
++					NonClientMetrics->iCaptionWidth         *= Dpi;
++					NonClientMetrics->iCaptionHeight        *= Dpi;
++					NonClientMetrics->iSmCaptionWidth       *= Dpi;
++					NonClientMetrics->iSmCaptionHeight      *= Dpi;
++					NonClientMetrics->iMenuWidth            *= Dpi;
++					NonClientMetrics->iMenuHeight           *= Dpi;
++					NonClientMetrics->iPaddedBorderWidth    *= Dpi;
++
++					NonClientMetrics->iBorderWidth          /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iScrollWidth          /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iScrollHeight         /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iCaptionWidth         /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iCaptionHeight        /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iSmCaptionWidth       /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iSmCaptionHeight      /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iMenuWidth            /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iMenuHeight           /= USER_DEFAULT_SCREEN_DPI;
++					NonClientMetrics->iPaddedBorderWidth    /= USER_DEFAULT_SCREEN_DPI;
++				}
++
++				return Success;
++			}
++		default:
++			SetLastError(ERROR_INVALID_PARAMETER);
++			return FALSE;
++		}
++	}
++
++	static HRESULT WINAPI GetScaleFactorForMonitor(
++		IN  HMONITOR                Monitor,
++		OUT DEVICE_SCALE_FACTOR    *ScaleFactor)
++	{
++		HDC DeviceContext;
++		ULONG LogPixelsX;
++
++		DeviceContext = GetDC(NULL);
++		if (!DeviceContext) {
++			*ScaleFactor = SCALE_100_PERCENT;
++			return S_OK;
++		}
++
++		LogPixelsX = GetDeviceCaps(DeviceContext, LOGPIXELSX);
++		ReleaseDC(NULL, DeviceContext);
++
++		*ScaleFactor = (DEVICE_SCALE_FACTOR) (9600 / LogPixelsX);
++		return S_OK;
++	}
++
++	static HRESULT WINAPI GetDpiForMonitor(
++		IN  HMONITOR            Monitor,
++		IN  MONITOR_DPI_TYPE    DpiType,
++		OUT UINT *              DpiX,
++		OUT UINT *              DpiY)
++	{
++		HDC DeviceContext;
++
++		if (DpiType >= MDT_MAXIMUM_DPI) {
++			return E_INVALIDARG;
++		}
++
++		if (!DpiX || !DpiY) {
++			return E_INVALIDARG;
++		}
++
++		if (!IsProcessDPIAware()) {
++			*DpiX = USER_DEFAULT_SCREEN_DPI;
++			*DpiY = USER_DEFAULT_SCREEN_DPI;
++			return S_OK;
++		}
++
++		DeviceContext = GetDC(NULL);
++		if (!DeviceContext) {
++			*DpiX = USER_DEFAULT_SCREEN_DPI;
++			*DpiY = USER_DEFAULT_SCREEN_DPI;
++			return S_OK;
++		}
++
++		*DpiX = GetDeviceCaps(DeviceContext, LOGPIXELSX);
++		*DpiY = GetDeviceCaps(DeviceContext, LOGPIXELSY);
++
++		if (DpiType == MDT_EFFECTIVE_DPI) {
++			DEVICE_SCALE_FACTOR ScaleFactor;
++
++			// We have to multiply the DPI values by the scaling factor.
++			QLegacyShims::GetScaleFactorForMonitor(Monitor, &ScaleFactor);
++
++			*DpiX *= ScaleFactor;
++			*DpiY *= ScaleFactor;
++			*DpiX /= 100;
++			*DpiY /= 100;
++		}
++
++		ReleaseDC(NULL, DeviceContext);
++		return S_OK;
++	}
++
++	static UINT WINAPI GetDpiForSystem(
++		VOID)
++	{
++		HDC DeviceContext;
++		ULONG LogPixelsX;
++
++		if (!IsProcessDPIAware()) {
++			return 96;
++		}
++
++		DeviceContext = GetDC(NULL);
++		if (!DeviceContext) {
++			return 96;
++		}
++
++		LogPixelsX = GetDeviceCaps(DeviceContext, LOGPIXELSX);
++		ReleaseDC(NULL, DeviceContext);
++
++		return LogPixelsX;
++	}
++
++	static UINT WINAPI GetDpiForWindow(
++		IN  HWND    Window)
++	{
++		if (!IsWindow(Window)) {
++			return 0;
++		}
++
++		return QLegacyShims::GetDpiForSystem();
++	}
++
++	static BOOL WINAPI AdjustWindowRectExForDpi(
++		IN OUT  LPRECT  Rect,
++		IN      ULONG   WindowStyle,
++		IN      BOOL    HasMenu,
++		IN      ULONG   WindowExStyle,
++		IN      ULONG   Dpi)
++	{
++		return AdjustWindowRectEx(
++			Rect,
++			WindowStyle,
++			HasMenu,
++			WindowExStyle);
++	}
++
++	static BOOL WINAPI SetProcessDpiAwarenessContext(
++		IN  DPI_AWARENESS_CONTEXT   DpiContext)
++	{
++		if ((ULONG_PTR)DpiContext == (ULONG_PTR)DPI_AWARENESS_CONTEXT_UNAWARE) {
++		} else if ((ULONG_PTR)DpiContext == (ULONG_PTR)DPI_AWARENESS_CONTEXT_SYSTEM_AWARE ||
++				 (ULONG_PTR)DpiContext == (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE ||
++				 (ULONG_PTR)DpiContext == (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) {
++			SetProcessDPIAware();
++		} else {
++			return FALSE;
++		}
++
++		return TRUE;
++	}
++
++	static BOOL WINAPI AreDpiAwarenessContextsEqual(
++		IN  DPI_AWARENESS_CONTEXT   Value1,
++		IN  DPI_AWARENESS_CONTEXT   Value2)
++	{
++		return (Value1 == Value2);
++	}
++
++	static BOOL WINAPI IsValidDpiAwarenessContext(
++		IN  DPI_AWARENESS_CONTEXT   Value)
++	{
++		if ((ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_UNAWARE ||
++			(ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED ||
++			(ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_SYSTEM_AWARE ||
++			(ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE ||
++			(ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) {
++			return TRUE;
++		} else {
++			return FALSE;
++		}
++	}
++
++	static BOOL WINAPI EnableNonClientDpiScaling(
++		IN  HWND    Window)
++	{
++		return TRUE;
++	}
++
++	static DPI_AWARENESS_CONTEXT WINAPI GetThreadDpiAwarenessContext(
++		VOID)
++	{
++		if (IsProcessDPIAware()) {
++			return DPI_AWARENESS_CONTEXT_SYSTEM_AWARE;
++		} else {
++			return DPI_AWARENESS_CONTEXT_UNAWARE;
++		}
++	}
++
++	static DPI_AWARENESS_CONTEXT WINAPI GetWindowDpiAwarenessContext(
++		IN  HWND    Window)
++	{
++		ULONG WindowThreadId;
++		ULONG WindowProcessId;
++
++		WindowThreadId = GetWindowThreadProcessId(Window, &WindowProcessId);
++		if (!WindowThreadId) {
++			return 0;
++		}
++
++		if (WindowProcessId == GetCurrentProcessId()) {
++			return QLegacyShims::GetThreadDpiAwarenessContext();
++		}
++
++		return DPI_AWARENESS_CONTEXT_UNAWARE;
++	}
++	
++	static DPI_AWARENESS WINAPI GetAwarenessFromDpiAwarenessContext(
++		IN  DPI_AWARENESS_CONTEXT  Value)
++	{
++		if (QLegacyShims::AreDpiAwarenessContextsEqual(Value, DPI_AWARENESS_CONTEXT_UNAWARE))
++			return DPI_AWARENESS_UNAWARE;
++		if (QLegacyShims::AreDpiAwarenessContextsEqual(Value, DPI_AWARENESS_CONTEXT_SYSTEM_AWARE))
++			return DPI_AWARENESS_SYSTEM_AWARE;
++		if (QLegacyShims::AreDpiAwarenessContextsEqual(Value, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE))
++			return DPI_AWARENESS_PER_MONITOR_AWARE;
++		if (QLegacyShims::AreDpiAwarenessContextsEqual(Value, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
++			return DPI_AWARENESS_PER_MONITOR_AWARE;
++		if (QLegacyShims::AreDpiAwarenessContextsEqual(Value, DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED))
++			return DPI_AWARENESS_UNAWARE;
++
++		return DPI_AWARENESS_UNAWARE;
++	}
++	
++	static HRESULT WINAPI SetProcessDpiAwareness(
++		IN  PROCESS_DPI_AWARENESS  value)
++	{
++		if (value == PROCESS_SYSTEM_DPI_AWARE || value == PROCESS_PER_MONITOR_DPI_AWARE) {
++			if (SetProcessDPIAware())
++				return S_OK;
++			else
++				return E_FAIL;
++		}
++		if (value == PROCESS_DPI_UNAWARE)
++			return S_OK;
++
++		return E_INVALIDARG;
++	}
++
++	static HRESULT WINAPI GetProcessDpiAwareness(
++		IN  HANDLE hProcess,
++		OUT PROCESS_DPI_AWARENESS *value)
++	{
++		UNREFERENCED_PARAMETER(hProcess);
++		
++		if (!value)
++			return E_INVALIDARG;
++
++		if (IsProcessDPIAware()) {
++			*value = PROCESS_SYSTEM_DPI_AWARE;
++		} else {
++			*value = PROCESS_DPI_UNAWARE;
++		}
++
++		return S_OK;
++	}
++	
++	static BOOL GetPointerType(
++		IN  UINT32               PointerId,
++		OUT POINTER_INPUT_TYPE  *PointerType)
++	{
++		*PointerType = PT_MOUSE;
++		return TRUE;
++	}
++
++	static BOOL GetPointerFrameTouchInfo(
++		IN      UINT32   PointerId,
++		IN OUT  UINT32   *PointerCount,
++		OUT     LPVOID  TouchInfo)
++	{
++		return FALSE;
++	}
++
++	static BOOL GetPointerFrameTouchInfoHistory(
++		IN      UINT32   PointerId,
++		IN OUT  UINT32   *EntriesCount,
++		IN OUT  UINT32   *PointerCount,
++		OUT     LPVOID   TouchInfo)
++	{
++		return FALSE;
++	}
++
++	static BOOL GetPointerPenInfo(
++		IN  UINT32   PointerId,
++		OUT LPVOID  PenInfo)
++	{
++		return FALSE;
++	}
++
++	static BOOL GetPointerPenInfoHistory(
++		IN      UINT32  PointerId,
++		IN OUT  UINT32  *EntriesCount,
++		OUT     LPVOID  PenInfo)
++	{
++		return FALSE;
++	}
++
++	static BOOL SkipPointerFrameMessages(
++		IN  UINT32   PointerId)
++	{
++		return TRUE;
++	}
++
++	static BOOL GetPointerDeviceRects(
++		IN  HANDLE  Device,
++		OUT LPRECT  PointerDeviceRect,
++		OUT LPRECT  DisplayRect)
++	{
++		PointerDeviceRect->top = 0;
++		PointerDeviceRect->left = 0;
++		PointerDeviceRect->bottom = GetSystemMetrics(SM_CYVIRTUALSCREEN);
++		PointerDeviceRect->right = GetSystemMetrics(SM_CXVIRTUALSCREEN);
++
++		DisplayRect->top = 0;
++		DisplayRect->left = 0;
++		DisplayRect->bottom = GetSystemMetrics(SM_CYVIRTUALSCREEN);
++		DisplayRect->right = GetSystemMetrics(SM_CXVIRTUALSCREEN);
++
++		return TRUE;
++	}
++
++	static BOOL GetPointerInfo(
++		IN  DWORD           PointerId,
++		OUT POINTER_INFO    *PointerInfo)
++	{
++		PointerInfo->pointerType = PT_MOUSE;
++		PointerInfo->pointerId = PointerId;
++		PointerInfo->frameId = 0;
++		PointerInfo->pointerFlags = POINTER_FLAG_NONE;
++		PointerInfo->sourceDevice = NULL;
++		PointerInfo->hwndTarget = NULL;
++		GetCursorPos(&PointerInfo->ptPixelLocation);
++		GetCursorPos(&PointerInfo->ptHimetricLocation);
++		GetCursorPos(&PointerInfo->ptPixelLocationRaw);
++		GetCursorPos(&PointerInfo->ptHimetricLocationRaw);
++		PointerInfo->dwTime = 0;
++		PointerInfo->historyCount = 1;
++		PointerInfo->InputData = 0;
++		PointerInfo->dwKeyStates = 0;
++		PointerInfo->PerformanceCount = 0;
++		PointerInfo->ButtonChangeType = POINTER_CHANGE_NONE;
++
++		return TRUE;
++	}
++
++	static BOOL WINAPI EnableMouseInPointer(
++		IN  BOOL    fEnable)
++	{
++		UNREFERENCED_PARAMETER(fEnable);
++		return TRUE;
++	}
++	
++	static BOOL WINAPI GetPointerTouchInfo(
++		IN  UINT32              pointerId,
++		OUT POINTER_TOUCH_INFO *touchInfo)
++	{
++		UNREFERENCED_PARAMETER(pointerId);
++		UNREFERENCED_PARAMETER(touchInfo);
++		return FALSE;
++	}
++}
++
++#endif // QLEGACYSHIMS_P_H
+\ No newline at end of file
 diff --git a/src/corelib/io/qstandardpaths_win.cpp b/src/corelib/io/qstandardpaths_win.cpp
-index c6471bf7..4a3621e4 100644
+index c6471bf7..c4cb95ae 100644
 --- a/src/corelib/io/qstandardpaths_win.cpp
 +++ b/src/corelib/io/qstandardpaths_win.cpp
 @@ -13,6 +13,7 @@
@@ -23,7 +569,7 @@ index c6471bf7..4a3621e4 100644
  #include <intshcut.h>
  #include <qvarlengtharray.h>
  
-@@ -61,20 +62,26 @@ static inline void appendTestMode(QString &path)
+@@ -61,19 +62,24 @@ static inline void appendTestMode(QString &path)
  
  static bool isProcessLowIntegrity()
  {
@@ -37,23 +583,20 @@ index c6471bf7..4a3621e4 100644
      auto* token_info = reinterpret_cast<TOKEN_MANDATORY_LABEL*>(token_info_buf.data());
      DWORD token_info_length = token_info_buf.size();
 -    if (!GetTokenInformation(process_token, TokenIntegrityLevel, token_info, token_info_length, &token_info_length)) {
-+    if (!GetTokenInformation(process_token, TokenIntegrityLevel, token_info, token_info_length, &token_info_length)
-+        && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
++    if (!GetTokenInformation(process_token, TokenIntegrityLevel, token_info, token_info_length, &token_info_length) && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
          // grow buffer and retry GetTokenInformation
          token_info_buf.resize(token_info_length);
          token_info = reinterpret_cast<TOKEN_MANDATORY_LABEL*>(token_info_buf.data());
          if (!GetTokenInformation(process_token, TokenIntegrityLevel, token_info, token_info_length, &token_info_length))
              return false; // assume "normal" process
      }
--
 +    else
 +        return false;
-+    
+ 
      // The GetSidSubAuthorityCount return-code is undefined on failure, so
      // there's no point in checking before dereferencing
-     DWORD integrity_level = *GetSidSubAuthority(token_info->Label.Sid, *GetSidSubAuthorityCount(token_info->Label.Sid) - 1);
 diff --git a/src/corelib/kernel/qeventdispatcher_win.cpp b/src/corelib/kernel/qeventdispatcher_win.cpp
-index 30eef9ff..baef1268 100644
+index 30eef9ff..da521f29 100644
 --- a/src/corelib/kernel/qeventdispatcher_win.cpp
 +++ b/src/corelib/kernel/qeventdispatcher_win.cpp
 @@ -368,10 +368,15 @@ void QEventDispatcherWin32Private::registerTimer(WinTimerInfo *t)
@@ -70,22 +613,20 @@ index 30eef9ff..baef1268 100644
 -        ok = SetCoalescableTimer(internalHwnd, t->timerId, interval, nullptr, tolerance);
 +        ok = mySetCoalescableTimerFunc(internalHwnd, t->timerId, interval, nullptr, tolerance);
      }
-+    
++
      if (!ok)
          ok = SetTimer(internalHwnd, t->timerId, interval, nullptr);
  
 diff --git a/src/corelib/kernel/qfunctions_win.cpp b/src/corelib/kernel/qfunctions_win.cpp
-index 4c057cdb..f3494054 100644
+index 4c057cdb..3c5b32ce 100644
 --- a/src/corelib/kernel/qfunctions_win.cpp
 +++ b/src/corelib/kernel/qfunctions_win.cpp
-@@ -61,10 +61,17 @@ void qt_win_ensureComInitializedOnThisThread()
+@@ -61,10 +61,15 @@ void qt_win_ensureComInitializedOnThisThread()
  */
  bool qt_win_hasPackageIdentity()
  {
 +    typedef BOOL (WINAPI *GetCurrentPackageFullNameFunc) (UINT32 *, PWSTR);
-+    static GetCurrentPackageFullNameFunc myGetCurrentPackageFullName = 
-+        (GetCurrentPackageFullNameFunc)::GetProcAddress(::GetModuleHandle(L"kernel32"), "GetCurrentPackageFullName");
-+
++    static GetCurrentPackageFullNameFunc myGetCurrentPackageFullName =         (GetCurrentPackageFullNameFunc)::GetProcAddress(::GetModuleHandle(L"kernel32"), "GetCurrentPackageFullName");
 +    if (myGetCurrentPackageFullName)
 +    {
  #if defined(HAS_APPMODEL)
@@ -97,35 +638,102 @@ index 4c057cdb..f3494054 100644
          case ERROR_INSUFFICIENT_BUFFER:
              return true;
          case APPMODEL_ERROR_NO_PACKAGE:
-@@ -78,6 +85,9 @@ bool qt_win_hasPackageIdentity()
+@@ -78,6 +83,9 @@ bool qt_win_hasPackageIdentity()
  #else
      return false;
  #endif
 +    }
-+
++    
 +    return false;
  }
  
  QT_END_NAMESPACE
+diff --git a/src/corelib/text/qlocale_win.cpp b/src/corelib/text/qlocale_win.cpp
+index 67dc7a21..a358dd76 100644
+--- a/src/corelib/text/qlocale_win.cpp
++++ b/src/corelib/text/qlocale_win.cpp
+@@ -18,6 +18,7 @@
+ // TODO QTBUG-121193: port away from the use of LCID to always use names.
+ #include <qt_windows.h>
+ #include <time.h>
++#include <versionhelpers.h>
+ 
+ #if QT_CONFIG(cpp_winrt)
+ #   include <QtCore/private/qt_winrtbase_p.h>
+@@ -742,16 +743,18 @@ QVariant QSystemLocalePrivate::uiLanguages()
+ {
+     QStringList result;
+ #if QT_CONFIG(cpp_winrt)
+-    using namespace winrt::Windows::System::UserProfile;
+-    QT_TRY {
+-        auto languages = GlobalizationPreferences::Languages();
+-        for (const auto &lang : languages)
+-            result << QString::fromStdString(winrt::to_string(lang));
+-    } QT_CATCH(...) {
+-        // pass, just fall back to WIN32 API implementation
++    if (IsWindows10OrGreater()) {
++        using namespace winrt::Windows::System::UserProfile;
++        QT_TRY {
++            auto languages = GlobalizationPreferences::Languages();
++            for (const auto &lang : languages)
++                result << QString::fromStdString(winrt::to_string(lang));
++        } QT_CATCH(...) {
++            // pass, just fall back to WIN32 API implementation
++        }
++        if (!result.isEmpty())
++            return result; // else just fall back to WIN32 API implementation
+     }
+-    if (!result.isEmpty())
+-        return result; // else just fall back to WIN32 API implementation
+ #endif // QT_CONFIG(cpp_winrt)
+     // mingw and clang still have to use Win32 API
+     unsigned long cnt = 0;
+diff --git a/src/corelib/text/qstringconverter.cpp b/src/corelib/text/qstringconverter.cpp
+index fd589ba8..4a38630a 100644
+--- a/src/corelib/text/qstringconverter.cpp
++++ b/src/corelib/text/qstringconverter.cpp
+@@ -23,14 +23,7 @@
+ #define QT_USE_ICU_CODECS
+ #define QT_COM_THREAD_INIT
+ 
+-#elif QT_CONFIG(winsdkicu)
+-
+-#include <icu.h>
+-#include <private/qfunctions_win_p.h>
+-#define QT_USE_ICU_CODECS
+-#define QT_COM_THREAD_INIT qt_win_ensureComInitializedOnThisThread();
+-
+-#endif // QT_CONFIG(icu) || QT_CONFIG(winsdkicu)
++#endif // QT_CONFIG(icu)
+ 
+ #ifdef Q_OS_WIN
+ #include <qt_windows.h>
 diff --git a/src/corelib/thread/qfutex_p.h b/src/corelib/thread/qfutex_p.h
-index b193811d..d5d1e4b9 100644
+index b193811d..8ebd2f89 100644
 --- a/src/corelib/thread/qfutex_p.h
 +++ b/src/corelib/thread/qfutex_p.h
-@@ -41,8 +41,8 @@ QT_END_NAMESPACE
+@@ -41,8 +41,6 @@ QT_END_NAMESPACE
  #elif defined(Q_OS_LINUX) && !defined(QT_LINUXBASE)
  // use Linux mutexes everywhere except for LSB builds
  #  include "qfutex_linux_p.h"
 -#elif defined(Q_OS_WIN)
 -#  include "qfutex_win_p.h"
-+//#elif defined(Q_OS_WIN)
-+//#  include "qfutex_win_p.h"
  #else
  QT_BEGIN_NAMESPACE
  namespace QtFutex = QtDummyFutex;
 diff --git a/src/corelib/thread/qmutex.cpp b/src/corelib/thread/qmutex.cpp
-index 719849fa..4e8748f7 100644
+index 719849fa..3e614c2b 100644
 --- a/src/corelib/thread/qmutex.cpp
 +++ b/src/corelib/thread/qmutex.cpp
+@@ -843,7 +843,7 @@ void QBasicMutex::unlockInternal(void *copy) noexcept
+     Q_ASSERT(copy); //we must be locked
+     Q_ASSERT(copy != dummyLocked()); // testAndSetRelease(dummyLocked(), 0) failed
+ 
+-#  if defined(Q_OS_FREEBSD) || defined(Q_OS_LINUX) || defined(Q_OS_WIN)
++#  if defined(Q_OS_FREEBSD) || defined(Q_OS_LINUX)
+     // these platforms always have futex and have never called this function
+     // from inline code
+     Q_UNREACHABLE();
 @@ -948,6 +948,8 @@ QT_END_NAMESPACE
  // nothing
  #elif defined(Q_OS_DARWIN)
@@ -163,7 +771,7 @@ index 8a7b4d89..b79a4b35 100644
  
 diff --git a/src/corelib/thread/qmutex_win.cpp b/src/corelib/thread/qmutex_win.cpp
 new file mode 100644
-index 00000000..9186f89a
+index 00000000..ce4a2647
 --- /dev/null
 +++ b/src/corelib/thread/qmutex_win.cpp
 @@ -0,0 +1,30 @@
@@ -199,7 +807,7 @@ index 00000000..9186f89a
 +QT_END_NAMESPACE
 \ No newline at end of file
 diff --git a/src/corelib/thread/qthread_win.cpp b/src/corelib/thread/qthread_win.cpp
-index f5a7756f..e12df0de 100644
+index f53e488a..48d2a546 100644
 --- a/src/corelib/thread/qthread_win.cpp
 +++ b/src/corelib/thread/qthread_win.cpp
 @@ -127,6 +127,62 @@ void QAdoptedThread::init()
@@ -244,9 +852,9 @@ index f5a7756f..e12df0de 100644
 +{
 +    HMODULE hKernel32 = GetModuleHandleW(L"Kernel32.dll");
 +
-+    SetThreadDescriptionFunc pSetThreadDescription =
++    SetThreadDescriptionFunc pSetThreadDescription = 
 +        reinterpret_cast<SetThreadDescriptionFunc>(GetProcAddress(hKernel32, "SetThreadDescription"));
-+
++    
 +    if (pSetThreadDescription) {
 +        pSetThreadDescription(threadId, reinterpret_cast<const wchar_t *>(name.utf16()) );
 +    }
@@ -265,7 +873,7 @@ index f5a7756f..e12df0de 100644
  /**************************************************************************
   ** QThreadPrivate
   *************************************************************************/
-@@ -170,21 +226,7 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
+@@ -169,21 +225,7 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
      QString threadName = std::exchange(thr->d_func()->objectName, {});
      if (Q_LIKELY(threadName.isEmpty()))
          threadName = QString::fromUtf8(thr->metaObject()->className());
@@ -288,8 +896,123 @@ index f5a7756f..e12df0de 100644
  
      emit thr->started(QThread::QPrivateSignal());
      QThread::setTerminationEnabled(true);
+@@ -199,29 +241,35 @@ void QThreadPrivate::setQualityOfServiceLevel(QThread::QualityOfService qosLevel
+     serviceLevel = qosLevel;
+ 
+ #if (_WIN32_WINNT >= _WIN32_WINNT_WIN10_RS3)
+-    qCDebug(lcQThread) << "Setting thread QoS class to" << qosLevel << "for thread" << q;
+-
+-    THREAD_POWER_THROTTLING_STATE state;
+-    memset(&state, 0, sizeof(state));
+-    state.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
+-
+-    switch (qosLevel) {
+-    case QThread::QualityOfService::Auto:
+-        state.ControlMask = 0; // Unset control of QoS
+-        state.StateMask = 0;
+-        break;
+-    case QThread::QualityOfService::Eco:
+-        state.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+-        state.StateMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+-        break;
+-    case QThread::QualityOfService::High:
+-        state.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
+-        state.StateMask = 0; // Ask to disable throttling
+-        break;
+-    }
+-    if (!SetThreadInformation(::GetCurrentThread(), THREAD_INFORMATION_CLASS::ThreadPowerThrottling,
+-                              &state, sizeof(state))) {
+-        qErrnoWarning("Failed to set thread power throttling state");
++    typedef BOOL(WINAPI* SetThreadInformationFunc)(HANDLE, THREAD_INFORMATION_CLASS, LPVOID, DWORD);
++    static SetThreadInformationFunc mySetThreadInformation = (SetThreadInformationFunc)::GetProcAddress(::GetModuleHandle(L"kernel32"), "SetThreadInformation");
++    
++    if (mySetThreadInformation) {
++        qCDebug(lcQThread) << "Setting thread QoS class to" << qosLevel << "for thread" << q;
++
++        THREAD_POWER_THROTTLING_STATE state;
++        memset(&state, 0, sizeof(state));
++        state.Version = THREAD_POWER_THROTTLING_CURRENT_VERSION;
++
++        switch (qosLevel) {
++        case QThread::QualityOfService::Auto:
++            state.ControlMask = 0; // Unset control of QoS
++            state.StateMask = 0;
++            break;
++        case QThread::QualityOfService::Eco:
++            state.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
++            state.StateMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
++            break;
++        case QThread::QualityOfService::High:
++            state.ControlMask = THREAD_POWER_THROTTLING_EXECUTION_SPEED;
++            state.StateMask = 0; // Ask to disable throttling
++            break;
++        }
++        
++        if (!mySetThreadInformation(::GetCurrentThread(), THREAD_INFORMATION_CLASS::ThreadPowerThrottling,
++                                  &state, sizeof(state))) {
++            qErrnoWarning("Failed to set thread power throttling state");
++        }
+     }
+ #endif
+ }
+diff --git a/src/gui/rhi/qdxgihdrinfo.cpp b/src/gui/rhi/qdxgihdrinfo.cpp
+index 023ca654..bc641afa 100644
+--- a/src/gui/rhi/qdxgihdrinfo.cpp
++++ b/src/gui/rhi/qdxgihdrinfo.cpp
+@@ -8,7 +8,14 @@ QT_BEGIN_NAMESPACE
+ 
+ QDxgiHdrInfo::QDxgiHdrInfo()
+ {
+-    HRESULT hr = CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&m_factory));
++    typedef HRESULT(WINAPI* CreateDXGIFactory2Func) (UINT flags, REFIID riid, void** factory);
++    static CreateDXGIFactory2Func myCreateDXGIFactory2 =
++        (CreateDXGIFactory2Func)::GetProcAddress(::GetModuleHandle(L"dxgi"), "CreateDXGIFactory2");
++        
++    if (!myCreateDXGIFactory2)
++        return;
++
++    HRESULT hr = myCreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&m_factory));
+     if (FAILED(hr)) {
+         qWarning("QDxgiHdrInfo: CreateDXGIFactory2 failed: %s", qPrintable(QSystemError::windowsComString(hr)));
+         return;
+@@ -22,7 +29,14 @@ QDxgiHdrInfo::QDxgiHdrInfo()
+ 
+ QDxgiHdrInfo::QDxgiHdrInfo(LUID luid)
+ {
+-    HRESULT hr = CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&m_factory));
++    typedef HRESULT(WINAPI* CreateDXGIFactory2Func) (UINT flags, REFIID riid, void** factory);
++    static CreateDXGIFactory2Func myCreateDXGIFactory2 =
++        (CreateDXGIFactory2Func)::GetProcAddress(::GetModuleHandle(L"dxgi"), "CreateDXGIFactory2");
++        
++    if (!myCreateDXGIFactory2)
++        return;
++
++    HRESULT hr = myCreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&m_factory));
+     if (FAILED(hr)) {
+         qWarning("QDxgiHdrInfo: CreateDXGIFactory2 failed: %s", qPrintable(QSystemError::windowsComString(hr)));
+         return;
+diff --git a/src/gui/rhi/qdxgivsyncservice.cpp b/src/gui/rhi/qdxgivsyncservice.cpp
+index 5f9b39f8..7db58acf 100644
+--- a/src/gui/rhi/qdxgivsyncservice.cpp
++++ b/src/gui/rhi/qdxgivsyncservice.cpp
+@@ -182,7 +182,14 @@ void QDxgiVSyncService::refAdapter(LUID luid)
+         return;
+ 
+     if (!dxgiFactory) {
+-        HRESULT hr = CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&dxgiFactory));
++        typedef HRESULT(WINAPI* CreateDXGIFactory2Func) (UINT flags, REFIID riid, void** factory);
++        static CreateDXGIFactory2Func myCreateDXGIFactory2 =
++        (CreateDXGIFactory2Func)::GetProcAddress(::GetModuleHandle(L"dxgi"), "CreateDXGIFactory2");
++        
++        if (!myCreateDXGIFactory2)
++            return;
++
++        HRESULT hr = myCreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&dxgiFactory));
+         if (FAILED(hr)) {
+             disableService = true;
+             qWarning("QDxgiVSyncService: CreateDXGIFactory2 failed: %s", qPrintable(QSystemError::windowsComString(hr)));
 diff --git a/src/gui/rhi/qrhid3d11.cpp b/src/gui/rhi/qrhid3d11.cpp
-index c69ab7e0..c036a21b 100644
+index ed1a79bd..04c021cc 100644
 --- a/src/gui/rhi/qrhid3d11.cpp
 +++ b/src/gui/rhi/qrhid3d11.cpp
 @@ -12,6 +12,8 @@
@@ -301,7 +1024,7 @@ index c69ab7e0..c036a21b 100644
  QT_BEGIN_NAMESPACE
  
  using namespace Qt::StringLiterals;
-@@ -184,13 +186,22 @@ inline Int aligned(Int v, Int byteAlign)
+@@ -184,13 +186,29 @@ inline Int aligned(Int v, Int byteAlign)
  
  static IDXGIFactory1 *createDXGIFactory2()
  {
@@ -315,12 +1038,19 @@ index c69ab7e0..c036a21b 100644
 -        qWarning("CreateDXGIFactory2() failed to create DXGI factory: %s",
 -            qPrintable(QSystemError::windowsComString(hr)));
 -        result = nullptr;
-+
-+    if (myCreateDXGIFactory2)
-+    {
-+        const HRESULT hr = myCreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&result));
++    HRESULT hr;
++    
++    if (myCreateDXGIFactory2) {
++         hr = myCreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&result));
 +        if (FAILED(hr)) {
 +            qWarning("CreateDXGIFactory2() failed to create DXGI factory: %s",
++                qPrintable(QSystemError::windowsComString(hr)));
++            result = nullptr;
++        }
++    } else {
++        hr = CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void **>(&result));
++        if (FAILED(hr)) {
++            qWarning("CreateDXGIFactory1() failed to create DXGI factory: %s",
 +                qPrintable(QSystemError::windowsComString(hr)));
 +            result = nullptr;
 +        }
@@ -329,64 +1059,225 @@ index c69ab7e0..c036a21b 100644
      return result;
  }
  
-@@ -5258,6 +5269,15 @@ static const DXGI_FORMAT DEFAULT_SRGB_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+@@ -5262,8 +5280,173 @@ bool QRhiD3D11::ensureDirectCompositionDevice()
+ static const DXGI_FORMAT DEFAULT_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM;
+ static const DXGI_FORMAT DEFAULT_SRGB_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
  
++bool QD3D11SwapChain::createOrResizeWin7()
++{
++    // This function combines modern Qt 6.8+ swapchain logic with fallbacks for Windows 7.
++    // It will first attempt to create a modern "flip model" swapchain (DXGI 1.2),
++    // and if that fails, it will fall back to the legacy "discard" model (DXGI 1.1).
++
++    const bool needsRegistration = !window || window != m_window;
++    if (window && window != m_window)
++        destroy();
++
++    window = m_window;
++    m_currentPixelSize = surfacePixelSize();
++    pixelSize = m_currentPixelSize;
++
++    if (pixelSize.isEmpty())
++        return false;
++
++    QRHI_RES_RHI(QRhiD3D11);
++    HRESULT hr;
++
++    // On Windows 7, flip model is not compatible with transparency (requires DirectComposition).
++    // Force the legacy path if alpha is requested.
++    bool canUseFlipModel = !(m_flags.testFlag(SurfaceHasPreMulAlpha) || m_flags.testFlag(SurfaceHasNonPreMulAlpha));
++
++    swapInterval = m_flags.testFlag(QRhiSwapChain::NoVSync) ? 0 : 1;
++    swapChainFlags = 0;
++    if (swapInterval == 0 && canUseFlipModel && rhiD->supportsAllowTearing)
++        swapChainFlags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
++
++    if (!swapChain) { // First-time creation
++        HWND hwnd = reinterpret_cast<HWND>(window->winId());
++        sampleDesc = rhiD->effectiveSampleDesc(m_sampleCount);
++        colorFormat = DEFAULT_FORMAT;
++        srgbAdjustedColorFormat = m_flags.testFlag(sRGB) ? DEFAULT_SRGB_FORMAT : DEFAULT_FORMAT;
++
++        bool flipModelAttempted = false;
++        if (canUseFlipModel) {
++            flipModelAttempted = true;
++            // --- TRY MODERN FLIP-MODEL PATH (DXGI 1.2, requires Win7 Platform Update) ---
++            IDXGIFactory2 *fac = static_cast<IDXGIFactory2 *>(rhiD->dxgiFactory);
++            if (fac) {
++                DXGI_SWAP_CHAIN_DESC1 desc = {};
++                desc.Width = UINT(pixelSize.width());
++                desc.Height = UINT(pixelSize.height());
++                desc.Format = colorFormat;
++                desc.SampleDesc.Count = 1;
++                desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
++                desc.BufferCount = BUFFER_COUNT;
++                desc.Scaling = DXGI_SCALING_NONE;
++                desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL; // Safest flip model
++                desc.Flags = swapChainFlags;
++
++                IDXGISwapChain1 *sc1;
++                hr = fac->CreateSwapChainForHwnd(rhiD->dev, hwnd, &desc, nullptr, nullptr, &sc1);
++                if (SUCCEEDED(hr))
++                    swapChain = sc1;
++            } else {
++                hr = E_FAIL; // Should not happen if createDXGIFactory2 succeeded, but for safety.
++            }
++        }
++
++        if (!swapChain) {
++            if (flipModelAttempted)
++                qWarning("QRhiD3D11: Flip model swapchain creation failed, falling back to legacy discard model. This may happen on Windows 7 without the Platform Update.");
++            
++            // --- FALLBACK TO LEGACY DISCARD PATH (DXGI 1.1, works on all Win7) ---
++            canUseFlipModel = false; // Ensure we stick to legacy logic now
++            swapChainFlags = 0; // Tearing is not supported in this mode
++
++            DXGI_SWAP_CHAIN_DESC desc = {};
++            desc.BufferDesc.Width = UINT(pixelSize.width());
++            desc.BufferDesc.Height = UINT(pixelSize.height());
++            desc.BufferDesc.Format = colorFormat;
++            desc.SampleDesc.Count = 1;
++            desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
++            desc.BufferCount = 1; // Discard model uses 1 back buffer
++            desc.OutputWindow = hwnd;
++            desc.Windowed = TRUE;
++            desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
++
++            hr = rhiD->dxgiFactory->CreateSwapChain(rhiD->dev, &desc, &swapChain);
++        }
++
++        if (FAILED(hr)) {
++            qWarning("Failed to create D3D11 swapchain: %s", qPrintable(QSystemError::windowsComString(hr)));
++            return false;
++        }
++
++        rhiD->dxgiFactory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_WINDOW_CHANGES);
++
++    } else { // Resizing existing swap chain
++        releaseBuffers();
++        const UINT bufferCount = canUseFlipModel ? BUFFER_COUNT : 1;
++        hr = swapChain->ResizeBuffers(bufferCount, UINT(pixelSize.width()), UINT(pixelSize.height()), colorFormat, swapChainFlags);
++        if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
++            qWarning("Device loss detected in ResizeBuffers()");
++            rhiD->deviceLost = true;
++            return false;
++        } else if (FAILED(hr)) {
++            qWarning("Failed to resize D3D11 swapchain: %s", qPrintable(QSystemError::windowsComString(hr)));
++            return false;
++        }
++    }
++
++    // --- COMMON POST-PROCESSING FOR BOTH CREATE AND RESIZE ---
++
++    hr = swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void **>(&backBufferTex));
++    if (FAILED(hr)) {
++        qWarning("Failed to query swapchain backbuffer: %s", qPrintable(QSystemError::windowsComString(hr)));
++        return false;
++    }
++
++    D3D11_RENDER_TARGET_VIEW_DESC rtvDesc = {};
++    rtvDesc.Format = srgbAdjustedColorFormat;
++    rtvDesc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
++    hr = rhiD->dev->CreateRenderTargetView(backBufferTex, &rtvDesc, &backBufferRtv);
++    if (FAILED(hr)) {
++        qWarning("Failed to create rtv for swapchain backbuffer: %s", qPrintable(QSystemError::windowsComString(hr)));
++        return false;
++    }
++
++    for (int i = 0; i < BUFFER_COUNT; ++i) {
++        if (sampleDesc.Count > 1) {
++            if (!newColorBuffer(pixelSize, srgbAdjustedColorFormat, sampleDesc, &msaaTex[i], &msaaRtv[i]))
++                return false;
++        }
++    }
++
++    if (m_depthStencil) {
++        if (m_depthStencil->pixelSize() != pixelSize) {
++             if (m_depthStencil->flags().testFlag(QRhiRenderBuffer::UsedWithSwapChainOnly)) {
++                m_depthStencil->setPixelSize(pixelSize);
++                if (!m_depthStencil->create())
++                    qWarning("Failed to rebuild swapchain's associated depth-stencil buffer for size %dx%d", pixelSize.width(), pixelSize.height());
++             }
++        }
++    }
++    
++    currentFrameSlot = 0;
++    frameCount = 0;
++    ds = m_depthStencil ? QRHI_RES(QD3D11RenderBuffer, m_depthStencil) : nullptr;
++
++    rt.setRenderPassDescriptor(m_renderPassDesc);
++    QD3D11SwapChainRenderTarget *rtD = QRHI_RES(QD3D11SwapChainRenderTarget, &rt);
++    rtD->d.rp = QRHI_RES(QD3D11RenderPassDescriptor, m_renderPassDesc);
++    rtD->d.pixelSize = pixelSize;
++    rtD->d.dpr = float(window->devicePixelRatio());
++    rtD->d.sampleCount = int(sampleDesc.Count);
++    rtD->d.colorAttCount = 1;
++    rtD->d.dsAttCount = m_depthStencil ? 1 : 0;
++
++    if (rhiD->rhiFlags.testFlag(QRhi::EnableTimestamps))
++        timestamps.prepare(rhiD);
++
++    QDxgiVSyncService::instance()->registerWindow(window);
++
++    if (needsRegistration)
++        rhiD->registerResource(this);
++
++    return true;
++}
++
  bool QD3D11SwapChain::createOrResize()
  {
-+    if (IsWindows10OrGreater())
-+    {
-+        // continue
-+    }
-+    else
-+    {
++    if (!IsWindows10OrGreater())
 +        return createOrResizeWin7();
-+    }
 +
      // Can be called multiple times due to window resizes - that is not the
      // same as a simple destroy+create (as with other resources). Just need to
      // resize the buffers then.
-@@ -5610,5 +5630,9 @@ bool RenderTargetUavUpdateState::update(QD3D11RenderTargetData *data, ID3D11Unor
-     return ret;
- }
- 
-+bool QD3D11SwapChain::createOrResizeWin7()
-+{
-+    return false; // not implemented yet ;(
-+}
- 
- QT_END_NAMESPACE
+@@ -5488,7 +5671,7 @@ bool QD3D11SwapChain::createOrResize()
+     // Some explanation from
+     // https://docs.microsoft.com/en-us/windows/win32/direct3ddxgi/dxgi-1-4-improvements
+     //
+-    // "In Direct3D 11, applications could call GetBuffer( 0, … ) only once.
++    // "In Direct3D 11, applications could call GetBuffer( 0, ? ) only once.
+     // Every call to Present implicitly changed the resource identity of the
+     // returned interface. Direct3D 12 no longer supports that implicit
+     // resource identity change, due to the CPU overhead required and the
 diff --git a/src/gui/rhi/qrhid3d11_p.h b/src/gui/rhi/qrhid3d11_p.h
-index 1ea5fdb7..961c6768 100644
+index f04d4f04..e9840757 100644
 --- a/src/gui/rhi/qrhid3d11_p.h
 +++ b/src/gui/rhi/qrhid3d11_p.h
-@@ -640,6 +640,7 @@ struct QD3D11SwapChain : public QRhiSwapChain
+@@ -607,7 +607,8 @@ struct QD3D11SwapChain : public QRhiSwapChain
  
      QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
      bool createOrResize() override;
+-
 +    bool createOrResizeWin7();
- 
++    
      void releaseBuffers();
      bool newColorBuffer(const QSize &size, DXGI_FORMAT format, DXGI_SAMPLE_DESC sampleDesc,
+                         ID3D11Texture2D **tex, ID3D11RenderTargetView **rtv) const;
 diff --git a/src/gui/rhi/qrhid3d12.cpp b/src/gui/rhi/qrhid3d12.cpp
-index bd793843..fecec52f 100644
+index 72bbe736..e8e7f4f5 100644
 --- a/src/gui/rhi/qrhid3d12.cpp
 +++ b/src/gui/rhi/qrhid3d12.cpp
-@@ -204,19 +204,35 @@ static inline QD3D12RenderTargetData *rtData(QRhiRenderTarget *rt)
+@@ -202,21 +202,37 @@ static inline QD3D12RenderTargetData *rtData(QRhiRenderTarget *rt)
+     Q_UNREACHABLE_RETURN(nullptr);
+ }
  
++typedef HRESULT(WINAPI* CreateDXGIFactory2Func) (UINT flags, REFIID riid, void** factory);
++static CreateDXGIFactory2Func myCreateDXGIFactory2 = nullptr;
++
  bool QRhiD3D12::create(QRhi::Flags flags)
  {
-+    typedef HRESULT(WINAPI* CreateDXGIFactory2Func) (UINT flags, REFIID riid, void** factory);
 +    typedef HRESULT(WINAPI* D3D12CreateDeviceFunc) (IUnknown *, D3D_FEATURE_LEVEL, REFIID, void **);
 +    typedef HRESULT(WINAPI* D3D12GetDebugInterfaceFunc) (REFIID, void **);
 +
-+    static CreateDXGIFactory2Func myCreateDXGIFactory2 =
-+        (CreateDXGIFactory2Func)::GetProcAddress(::GetModuleHandle(L"dxgi"), "CreateDXGIFactory2");
++    if (!myCreateDXGIFactory2)
++        myCreateDXGIFactory2 = (CreateDXGIFactory2Func)::GetProcAddress(::GetModuleHandle(L"dxgi"), "CreateDXGIFactory2");
 +
-+    static D3D12CreateDeviceFunc myD3D12CreateDevice =
-+        (D3D12CreateDeviceFunc)::GetProcAddress(::GetModuleHandle(L"D3d12"), "D3D12CreateDevice");
++    static D3D12CreateDeviceFunc myD3D12CreateDevice = (D3D12CreateDeviceFunc)::GetProcAddress(::GetModuleHandle(L"D3d12"), "D3D12CreateDevice");
 +
-+    static D3D12GetDebugInterfaceFunc myD3D12GetDebugInterface =
-+        (D3D12GetDebugInterfaceFunc)::GetProcAddress(::GetModuleHandle(L"D3d12"), "D3D12GetDebugInterface");
++    static D3D12GetDebugInterfaceFunc myD3D12GetDebugInterface = (D3D12GetDebugInterfaceFunc)::GetProcAddress(::GetModuleHandle(L"D3d12"), "D3D12GetDebugInterface");
 +
 +    if (!myCreateDXGIFactory2 || !myD3D12CreateDevice || !myD3D12GetDebugInterface)
 +        return false;
@@ -427,7 +1318,32 @@ index bd793843..fecec52f 100644
                                 minimumFeatureLevel,
                                 __uuidof(ID3D12Device2),
                                 reinterpret_cast<void **>(&dev));
-@@ -2976,6 +2992,9 @@ QD3D12Descriptor QD3D12SamplerManager::getShaderVisibleDescriptor(const D3D12_SA
+@@ -630,6 +646,12 @@ void QRhiD3D12::destroy()
+ 
+ QRhi::AdapterList QRhiD3D12::enumerateAdaptersBeforeCreate(QRhiNativeHandles *nativeHandles) const
+ {
++    if (!myCreateDXGIFactory2)
++        myCreateDXGIFactory2 = (CreateDXGIFactory2Func)::GetProcAddress(::GetModuleHandle(L"dxgi"), "CreateDXGIFactory2");
++    
++    if (!myCreateDXGIFactory2)
++        return {};
++
+     LUID requestedLuid = {};
+     if (nativeHandles) {
+         QRhiD3D12NativeHandles *h = static_cast<QRhiD3D12NativeHandles *>(nativeHandles);
+@@ -637,9 +659,9 @@ QRhi::AdapterList QRhiD3D12::enumerateAdaptersBeforeCreate(QRhiNativeHandles *na
+         if (adapterLuid.LowPart || adapterLuid.HighPart)
+             requestedLuid = adapterLuid;
+     }
+-
++    
+     IDXGIFactory2 *dxgi = nullptr;
+-    if (FAILED(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&dxgi))))
++    if (FAILED(myCreateDXGIFactory2(0, __uuidof(IDXGIFactory2), reinterpret_cast<void **>(&dxgi))))
+         return {};
+ 
+     QRhi::AdapterList list;
+@@ -2967,6 +2989,9 @@ QD3D12Descriptor QD3D12SamplerManager::getShaderVisibleDescriptor(const D3D12_SA
      return descriptor;
  }
  
@@ -437,43 +1353,43 @@ index bd793843..fecec52f 100644
  bool QD3D12MipmapGenerator::create(QRhiD3D12 *rhiD)
  {
      this->rhiD = rhiD;
-@@ -3020,8 +3039,15 @@ bool QD3D12MipmapGenerator::create(QRhiD3D12 *rhiD)
+@@ -3010,9 +3035,15 @@ bool QD3D12MipmapGenerator::create(QRhiD3D12 *rhiD)
+     rsDesc.Desc_1_1.pParameters = rootParams;
      rsDesc.Desc_1_1.NumStaticSamplers = 1;
      rsDesc.Desc_1_1.pStaticSamplers = &samplerDesc;
- 
++    
 +    if (!myD3D12SerializeVersionedRootSignature)
-+        myD3D12SerializeVersionedRootSignature =
-+        (D3D12SerializeVersionedRootSignatureFunc)::GetProcAddress(::GetModuleHandle(L"D3d12"), "D3D12SerializeVersionedRootSignature");
++        myD3D12SerializeVersionedRootSignature = (D3D12SerializeVersionedRootSignatureFunc)::GetProcAddress(::GetModuleHandle(L"D3d12"), "D3D12SerializeVersionedRootSignature");
 +
 +    if (!myD3D12SerializeVersionedRootSignature)
 +        return false;
-+
+ 
      ID3DBlob *signature = nullptr;
 -    HRESULT hr = D3D12SerializeVersionedRootSignature(&rsDesc, &signature, nullptr);
 +    HRESULT hr = myD3D12SerializeVersionedRootSignature(&rsDesc, &signature, nullptr);
      if (FAILED(hr)) {
          qWarning("Failed to serialize root signature: %s", qPrintable(QSystemError::windowsComString(hr)));
          return false;
-@@ -4669,7 +4695,7 @@ bool QD3D12Texture::prepareCreate(QSize *adjustedSize)
-         else
-             srvFormat = toD3DTextureFormat(m_readViewFormat.format, m_readViewFormat.srgb ? sRGB : Flags());
-     }
--
-+    
-     mipLevelCount = uint(hasMipMaps ? rhiD->q->mipLevelsForSize(size) : 1);
-     sampleDesc = rhiD->effectiveSampleDesc(m_sampleCount, dxgiFormat);
-     if (sampleDesc.Count > 1) {
-@@ -5481,6 +5507,9 @@ QD3D12ObjectHandle QD3D12ShaderResourceBindings::createRootSignature(const QD3D1
+@@ -3264,7 +3295,7 @@ bool QD3D12MipmapGenerator3D::create(QRhiD3D12 *rhiD)
+     rsDesc.Desc_1_1.pStaticSamplers = &samplerDesc;
+ 
+     ID3DBlob *signature = nullptr;
+-    HRESULT hr = D3D12SerializeVersionedRootSignature(&rsDesc, &signature, nullptr);
++    HRESULT hr = myD3D12SerializeVersionedRootSignature(&rsDesc, &signature, nullptr);
+     if (FAILED(hr)) {
+         qWarning("Failed to serialize root signature: %s", qPrintable(QSystemError::windowsComString(hr)));
+         return false;
+@@ -5471,6 +5502,9 @@ QD3D12ObjectHandle QD3D12ShaderResourceBindings::createRootSignature(const QD3D1
+                                                                      int stageCount)
  {
      QRHI_RES_RHI(QRhiD3D12);
- 
++    
 +    if (!myD3D12SerializeVersionedRootSignature)
 +        return {};
-+
+ 
      // It's not just that the root signature has to be tied to the pipeline
      // (cannot just freely create it like e.g. with Vulkan where one just
-     // creates a descriptor layout 1:1 with the QRhiShaderResourceBindings'
-@@ -5565,7 +5594,7 @@ QD3D12ObjectHandle QD3D12ShaderResourceBindings::createRootSignature(const QD3D1
+@@ -5556,7 +5590,7 @@ QD3D12ObjectHandle QD3D12ShaderResourceBindings::createRootSignature(const QD3D1
      rsDesc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAGS(rsFlags);
  
      ID3DBlob *signature = nullptr;
@@ -483,19 +1399,17 @@ index bd793843..fecec52f 100644
          qWarning("Failed to serialize root signature: %s", qPrintable(QSystemError::windowsComString(hr)));
          return {};
 diff --git a/src/gui/text/windows/qwindowsfontdatabasebase.cpp b/src/gui/text/windows/qwindowsfontdatabasebase.cpp
-index 055e616d..104cc834 100644
+index 990f20fa..e21db2fc 100644
 --- a/src/gui/text/windows/qwindowsfontdatabasebase.cpp
 +++ b/src/gui/text/windows/qwindowsfontdatabasebase.cpp
-@@ -767,7 +767,16 @@ QFont QWindowsFontDatabaseBase::systemDefaultFont()
+@@ -765,7 +765,14 @@ QFont QWindowsFontDatabaseBase::systemDefaultFont()
      // Qt 6: Obtain default GUI font (typically "Segoe UI, 9pt", see QTBUG-58610)
      NONCLIENTMETRICS ncm = {};
      ncm.cbSize = sizeof(ncm);
 -    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, ncm.cbSize, &ncm, 0, defaultVerticalDPI());
-+
++    
 +    typedef BOOL (WINAPI *SystemParametersInfoForDpiFunc) (UINT, UINT, PVOID, UINT, UINT);
-+    static SystemParametersInfoForDpiFunc mySystemParametersInfoForDpi = 
-+        (SystemParametersInfoForDpiFunc)::GetProcAddress(::GetModuleHandle(L"user32"), "SystemParametersInfoForDpi");
-+
++    static SystemParametersInfoForDpiFunc mySystemParametersInfoForDpi =  (SystemParametersInfoForDpiFunc)::GetProcAddress(::GetModuleHandle(L"user32"), "SystemParametersInfoForDpi");
 +    if (mySystemParametersInfoForDpi)
 +        mySystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, ncm.cbSize, &ncm, 0, defaultVerticalDPI());
 +    else
@@ -505,78 +1419,11 @@ index 055e616d..104cc834 100644
      qCDebug(lcQpaFonts) << __FUNCTION__ << systemFont;
      return systemFont;
 diff --git a/src/network/kernel/qdnslookup_win.cpp b/src/network/kernel/qdnslookup_win.cpp
-index 60d0f141..19c3a91e 100644
+index 60d0f141..84cbb5a2 100644
 --- a/src/network/kernel/qdnslookup_win.cpp
 +++ b/src/network/kernel/qdnslookup_win.cpp
-@@ -6,11 +6,9 @@
- #include <winsock2.h>
- #include "qdnslookup_p.h"
+@@ -120,46 +120,88 @@ static DNS_STATUS sendAlternate(QDnsLookupRunnable *self, QDnsLookupReply *reply
  
--#include <qendian.h>
-+#include <qurl.h>
- #include <private/qnativesocketengine_p.h>
- #include <private/qsystemerror_p.h>
--#include <qurl.h>
--#include <qspan.h>
- 
- #include <qt_windows.h>
- #include <windns.h>
-@@ -66,100 +64,103 @@ DNS_STATUS WINAPI DnsQueryEx(PDNS_QUERY_REQUEST pQueryRequest,
- 
- QT_BEGIN_NAMESPACE
- 
--static DNS_STATUS sendAlternate(QDnsLookupRunnable *self, QDnsLookupReply *reply,
--                                PDNS_QUERY_REQUEST request, PDNS_QUERY_RESULT results)
--{
--    // WinDNS wants MTU - IP Header - UDP header for some reason, in spite
--    // of never needing that much
--    QVarLengthArray<unsigned char, 1472> query(1472);
--
--    auto dnsBuffer = new (query.data()) DNS_MESSAGE_BUFFER;
--    DWORD dnsBufferSize = query.size();
--    WORD xid = 0;
--    bool recursionDesired = true;
--
--    SetLastError(ERROR_SUCCESS);
--
--    // MinGW winheaders incorrectly declare the third parameter as LPWSTR
--    if (!DnsWriteQuestionToBuffer_W(dnsBuffer, &dnsBufferSize,
--                                    const_cast<LPWSTR>(request->QueryName), request->QueryType,
--                                    xid, recursionDesired)) {
--        // let's try reallocating
--        query.resize(dnsBufferSize);
--        if (!DnsWriteQuestionToBuffer_W(dnsBuffer, &dnsBufferSize,
--                                        const_cast<LPWSTR>(request->QueryName), request->QueryType,
--                                        xid, recursionDesired)) {
--            return GetLastError();
--        }
--    }
--
--    // set AD bit: we want to trust this server
--    dnsBuffer->MessageHead.AuthenticatedData = true;
--
--    QDnsLookupRunnable::ReplyBuffer replyBuffer;
--    if (!self->sendDnsOverTls(reply, { query.data(), qsizetype(dnsBufferSize) }, replyBuffer))
--        return DNS_STATUS(-1);   // error set in reply
--
--    // interpret the RCODE in the reply
--    auto response = reinterpret_cast<PDNS_MESSAGE_BUFFER>(replyBuffer.data());
--    DNS_HEADER *header = &response->MessageHead;
--    if (!header->IsResponse)
--        return DNS_ERROR_BAD_PACKET;        // not a reply
--
--    // Convert the byte order for the 16-bit quantities in the header, so
--    // DnsExtractRecordsFromMessage can parse the contents.
--    //header->Xid = qFromBigEndian(header->Xid);
--    header->QuestionCount = qFromBigEndian(header->QuestionCount);
--    header->AnswerCount = qFromBigEndian(header->AnswerCount);
--    header->NameServerCount = qFromBigEndian(header->NameServerCount);
--    header->AdditionalCount = qFromBigEndian(header->AdditionalCount);
--
--    results->QueryOptions = request->QueryOptions;
--    return DnsExtractRecordsFromMessage_W(response, replyBuffer.size(), &results->pQueryRecords);
--}
--
  void QDnsLookupRunnable::query(QDnsLookupReply *reply)
  {
 -    // Perform DNS query.
@@ -586,33 +1433,9 @@ index 60d0f141..19c3a91e 100644
 -    request.QueryName = reinterpret_cast<const wchar_t *>(requestName.constData());
 -    request.QueryType = requestType;
 -    request.QueryOptions = DNS_QUERY_STANDARD | DNS_QUERY_TREAT_AS_FQDN;
-+    typedef BOOL (WINAPI *DnsQueryExFunc) (PDNS_QUERY_REQUEST, PDNS_QUERY_RESULT, PDNS_QUERY_CANCEL);
++    typedef DNS_STATUS (WINAPI *DnsQueryExFunc) (PDNS_QUERY_REQUEST, PDNS_QUERY_RESULT, PDNS_QUERY_CANCEL);
 +    static DnsQueryExFunc myDnsQueryEx = 
 +        (DnsQueryExFunc)::GetProcAddress(::GetModuleHandle(L"Dnsapi"), "DnsQueryEx");
-+
-+    PDNS_RECORD ptrStart = nullptr;
-+
-+    if (myDnsQueryEx)
-+    {
-+        // Perform DNS query.
-+        alignas(DNS_ADDR_ARRAY) uchar dnsAddresses[sizeof(DNS_ADDR_ARRAY) + sizeof(DNS_ADDR)];
-+        DNS_QUERY_REQUEST request = {};
-+        request.Version = 1;
-+        request.QueryName = reinterpret_cast<const wchar_t *>(requestName.constData());
-+        request.QueryType = requestType;
-+        request.QueryOptions = DNS_QUERY_STANDARD | DNS_QUERY_TREAT_AS_FQDN;
-+
-+        if (!nameserver.isNull()) {
-+            memset(dnsAddresses, 0, sizeof(dnsAddresses));
-+            request.pDnsServerList = new (dnsAddresses) DNS_ADDR_ARRAY;
-+            auto addr = new (request.pDnsServerList->AddrArray) DNS_ADDR[1];
-+            auto sa = new (addr[0].MaxSa) sockaddr;
-+            request.pDnsServerList->MaxCount = sizeof(dnsAddresses);
-+            request.pDnsServerList->AddrCount = 1;
-+            // ### setting port 53 seems to cause some systems to fail
-+            setSockaddr(sa, nameserver, port == DnsPort ? 0 : port);
-+            request.pDnsServerList->Family = sa->sa_family;
-+        }
  
 -    if (protocol == QDnsLookup::Standard && !nameserver.isNull()) {
 -        memset(dnsAddresses, 0, sizeof(dnsAddresses));
@@ -624,67 +1447,8 @@ index 60d0f141..19c3a91e 100644
 -        // ### setting port 53 seems to cause some systems to fail
 -        setSockaddr(sa, nameserver, port == DnsPort ? 0 : port);
 -        request.pDnsServerList->Family = sa->sa_family;
-+        DNS_QUERY_RESULT results = {};
-+        results.Version = 1;
-+        const DNS_STATUS status = myDnsQueryEx(&request, &results, nullptr);
-+        if (status >= DNS_ERROR_RCODE_FORMAT_ERROR && status <= DNS_ERROR_RCODE_LAST)
-+            return reply->makeDnsRcodeError(status - DNS_ERROR_RCODE_FORMAT_ERROR + 1);
-+        else if (status == ERROR_TIMEOUT)
-+            return reply->makeTimeoutError();
-+        else if (status != ERROR_SUCCESS)
-+            return reply->makeResolverSystemError(status);
-+
-+        ptrStart = results.pQueryRecords;
-     }
-+    else
-+    {
-+        // Perform DNS query.
-+        PDNS_RECORD dns_records = 0;
-+        QByteArray requestNameUTF8 = requestName.toUtf8();
-+        const QString requestNameUtf16 = QString::fromUtf8(requestNameUTF8.data(), requestNameUTF8.size());
-+        IP4_ARRAY srvList;
-+        memset(&srvList, 0, sizeof(IP4_ARRAY));
-+        if (!nameserver.isNull()) {
-+            if (nameserver.protocol() == QAbstractSocket::IPv4Protocol) {
-+                // The below code is referenced from: http://support.microsoft.com/kb/831226
-+                srvList.AddrCount = 1;
-+                srvList.AddrArray[0] = htonl(nameserver.toIPv4Address());
-+            } else if (nameserver.protocol() == QAbstractSocket::IPv6Protocol) {
-+                // For supporting IPv6 nameserver addresses, we'll need to switch
-+                // from DnsQuey() to DnsQueryEx() as it supports passing an IPv6
-+                // address in the nameserver list
-+                qWarning("%s", "IPv6 addresses for nameservers are currently not supported");
-+                reply->error = QDnsLookup::ResolverError;
-+                reply->errorString = tr("IPv6 addresses for nameservers are currently not supported");
-+                return;
-+            }
-+        }
-+        const DNS_STATUS status = DnsQuery_W(reinterpret_cast<const wchar_t*>(requestNameUtf16.utf16()), requestType, DNS_QUERY_STANDARD, &srvList, &dns_records, NULL);
-+        switch (status) {
-+        case ERROR_SUCCESS:
-+            break;
-+        case DNS_ERROR_RCODE_FORMAT_ERROR:
-+            reply->error = QDnsLookup::InvalidRequestError;
-+            reply->errorString = tr("Server could not process query");
-+            return;
-+        case DNS_ERROR_RCODE_SERVER_FAILURE:
-+        case DNS_ERROR_RCODE_NOT_IMPLEMENTED:
-+            reply->error = QDnsLookup::ServerFailureError;
-+            reply->errorString = tr("Server failure");
-+            return;
-+        case DNS_ERROR_RCODE_NAME_ERROR:
-+            reply->error = QDnsLookup::NotFoundError;
-+            reply->errorString = tr("Non existent domain");
-+            return;
-+        case DNS_ERROR_RCODE_REFUSED:
-+            reply->error = QDnsLookup::ServerRefusedError;
-+            reply->errorString = tr("Server refused to answer");
-+            return;
-+        default:
-+            reply->error = QDnsLookup::InvalidReplyError;
-+            reply->errorString = QSystemError(status, QSystemError::NativeError).toString();
-+            return;
-+        }
+-    }
++    PDNS_RECORD ptrStart = nullptr;
  
 -    DNS_QUERY_RESULT results = {};
 -    results.Version = 1;
@@ -696,8 +1460,40 @@ index 60d0f141..19c3a91e 100644
 -    case QDnsLookup::DnsOverTls:
 -        status = sendAlternate(this, reply, &request, &results);
 -        break;
-+        ptrStart = dns_records;
-     }
+-    }
++    if ((myDnsQueryEx && protocol == QDnsLookup::Standard) || protocol == QDnsLookup::DnsOverTls)
++    {
++        // Perform DNS query.
++        alignas(DNS_ADDR_ARRAY) uchar dnsAddresses[sizeof(DNS_ADDR_ARRAY) + sizeof(DNS_ADDR)];
++        DNS_QUERY_REQUEST request = {};
++        request.Version = 1;
++        request.QueryName = reinterpret_cast<const wchar_t *>(requestName.constData());
++        request.QueryType = requestType;
++        request.QueryOptions = DNS_QUERY_STANDARD | DNS_QUERY_TREAT_AS_FQDN;
++
++        if (protocol == QDnsLookup::Standard && !nameserver.isNull()) {
++            memset(dnsAddresses, 0, sizeof(dnsAddresses));
++            request.pDnsServerList = new (dnsAddresses) DNS_ADDR_ARRAY;
++            auto addr = new (request.pDnsServerList->AddrArray) DNS_ADDR[1];
++            auto sa = new (addr[0].MaxSa) sockaddr;
++            request.pDnsServerList->MaxCount = sizeof(dnsAddresses);
++            request.pDnsServerList->AddrCount = 1;
++            // ### setting port 53 seems to cause some systems to fail
++            setSockaddr(sa, nameserver, port == DnsPort ? 0 : port);
++            request.pDnsServerList->Family = sa->sa_family;
++        }
++
++        DNS_QUERY_RESULT results = {};
++        results.Version = 1;
++        DNS_STATUS status = ERROR_INVALID_PARAMETER;
++        switch (protocol) {
++        case QDnsLookup::Standard:
++            status = myDnsQueryEx(&request, &results, nullptr);
++            break;
++        case QDnsLookup::DnsOverTls:
++            status = sendAlternate(this, reply, &request, &results);
++            break;
++        }
  
 -    if (status == DNS_STATUS(-1))
 -        return;     // error already set in reply
@@ -707,50 +1503,61 @@ index 60d0f141..19c3a91e 100644
 -        return reply->makeTimeoutError();
 -    else if (status != ERROR_SUCCESS)
 -        return reply->makeResolverSystemError(status);
++        if (status == DNS_STATUS(-1))
++            return;     // error already set in reply
++        if (status >= DNS_ERROR_RCODE_FORMAT_ERROR && status <= DNS_ERROR_RCODE_LAST)
++            return reply->makeDnsRcodeError(status - DNS_ERROR_RCODE_FORMAT_ERROR + 1);
++        else if (status == ERROR_TIMEOUT)
++            return reply->makeTimeoutError();
++        else if (status != ERROR_SUCCESS)
++            return reply->makeResolverSystemError(status);
++            
++        ptrStart = results.pQueryRecords;
++    } else {
++        // Perform DNS query.
++        PDNS_RECORD dns_records = nullptr;
++        QByteArray requestNameUTF8 = requestName.toUtf8();
++        const QString requestNameUtf16 = QString::fromUtf8(requestNameUTF8.data(), requestNameUTF8.size());
++        
++        IP4_ARRAY srvList;
++        memset(&srvList, 0, sizeof(IP4_ARRAY));
++        if (!nameserver.isNull()) {
++            if (nameserver.protocol() == QAbstractSocket::IPv4Protocol) {
++                srvList.AddrCount = 1;
++                srvList.AddrArray[0] = htonl(nameserver.toIPv4Address());
++            } else if (nameserver.protocol() == QAbstractSocket::IPv6Protocol) {
++                reply->makeResolverSystemError(ERROR_NOT_SUPPORTED);
++                return;
++            }
++        }
++        
++        const DNS_STATUS status = DnsQuery_W(reinterpret_cast<const wchar_t*>(requestNameUtf16.utf16()), requestType, DNS_QUERY_STANDARD, &srvList, &dns_records, NULL);
++        
++        if (status != ERROR_SUCCESS) {
++            if (status >= DNS_ERROR_RCODE_FORMAT_ERROR && status <= DNS_ERROR_RCODE_LAST)
++                return reply->makeDnsRcodeError(status - DNS_ERROR_RCODE_FORMAT_ERROR + 1);
++            else
++                return reply->makeResolverSystemError(status);
++        }
++
++        ptrStart = dns_records;
++    }
++    
 +    if (!ptrStart)
 +        return;
  
      QStringView lastEncodedName;
      QString cachedDecodedName;
-@@ -171,9 +172,9 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
-     auto extractMaybeCachedHost = [&](QStringView name) -> const QString & {
-         return lastEncodedName == name ? cachedDecodedName : extractAndCacheHost(name);
+@@ -173,7 +215,7 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
      };
--
-+    
+ 
      // Extract results.
 -    for (PDNS_RECORD ptr = results.pQueryRecords; ptr != NULL; ptr = ptr->pNext) {
 +    for (PDNS_RECORD ptr = ptrStart; ptr != NULL; ptr = ptr->pNext) {
          // warning: always assign name to the record before calling extractXxxHost() again
          const QString &name = extractMaybeCachedHost(ptr->pName);
          if (ptr->wType == QDnsLookup::A) {
-@@ -225,25 +226,6 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
-             record.d->timeToLive = ptr->dwTtl;
-             record.d->weight = ptr->Data.Srv.wWeight;
-             reply->serviceRecords.append(record);
--        } else if (ptr->wType == QDnsLookup::TLSA) {
--            // Note: untested, because the DNS_RECORD reply appears to contain
--            // no records relating to TLSA. Maybe WinDNS filters them out of
--            // zones without DNSSEC.
--            QDnsTlsAssociationRecord record;
--            record.d->name = name;
--            record.d->timeToLive = ptr->dwTtl;
--
--            const auto &tlsa = ptr->Data.Tlsa;
--            const quint8 usage = tlsa.bCertUsage;
--            const quint8 selector = tlsa.bSelector;
--            const quint8 matchType = tlsa.bMatchingType;
--
--            record.d->usage = QDnsTlsAssociationRecord::CertificateUsage(usage);
--            record.d->selector = QDnsTlsAssociationRecord::Selector(selector);
--            record.d->matchType = QDnsTlsAssociationRecord::MatchingType(matchType);
--            record.d->value.assign(tlsa.bCertificateAssociationData,
--                                   tlsa.bCertificateAssociationData + tlsa.bCertificateAssociationDataLength);
--            reply->tlsAssociationRecords.append(std::move(record));
-         } else if (ptr->wType == QDnsLookup::TXT) {
-             QDnsTextRecord record;
-             record.d->name = name;
-@@ -255,7 +237,7 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
+@@ -255,7 +297,7 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
          }
      }
  
@@ -759,11 +1566,35 @@ index 60d0f141..19c3a91e 100644
  }
  
  QT_END_NAMESPACE
+diff --git a/src/plugins/platforms/direct2d/CMakeLists.txt b/src/plugins/platforms/direct2d/CMakeLists.txt
+index ff2a9989..7f0db98e 100644
+--- a/src/plugins/platforms/direct2d/CMakeLists.txt
++++ b/src/plugins/platforms/direct2d/CMakeLists.txt
+@@ -209,6 +209,7 @@ qt_internal_extend_target(QWindowsDirect2DIntegrationPlugin CONDITION QT_FEATURE
+         ../windows/uiautomation/qwindowsuiautils.cpp ../windows/uiautomation/qwindowsuiautils.h
+         ../windows/uiautomation/qwindowsuiavalueprovider.cpp ../windows/uiautomation/qwindowsuiavalueprovider.h
+         ../windows/uiautomation/qwindowsuiawindowprovider.cpp ../windows/uiautomation/qwindowsuiawindowprovider.h
++        ../windows/uiautomation/qwindowsuiawrapper_p.cpp ../windows/uiautomation/qwindowsuiawrapper_p.h
+ )
+ 
+ # This is loaded dynamically when using MINGW as its import library is incomplete
+diff --git a/src/plugins/platforms/windows/CMakeLists.txt b/src/plugins/platforms/windows/CMakeLists.txt
+index 4c171a3c..443f1766 100644
+--- a/src/plugins/platforms/windows/CMakeLists.txt
++++ b/src/plugins/platforms/windows/CMakeLists.txt
+@@ -198,6 +198,7 @@ qt_internal_extend_target(QWindowsIntegrationPlugin CONDITION QT_FEATURE_accessi
+         uiautomation/qwindowsuiautils.cpp uiautomation/qwindowsuiautils.h
+         uiautomation/qwindowsuiavalueprovider.cpp uiautomation/qwindowsuiavalueprovider.h
+         uiautomation/qwindowsuiawindowprovider.cpp uiautomation/qwindowsuiawindowprovider.h
++        uiautomation/qwindowsuiawrapper_p.cpp uiautomation/qwindowsuiawrapper_p.h
+ )
+ 
+ # This is loaded dynamically when using MINGW as its import library is incomplete
 diff --git a/src/plugins/platforms/windows/qwin10helpers.cpp b/src/plugins/platforms/windows/qwin10helpers.cpp
-index 026e81cb..3bbc974b 100644
+index 026e81cb..df85914a 100644
 --- a/src/plugins/platforms/windows/qwin10helpers.cpp
 +++ b/src/plugins/platforms/windows/qwin10helpers.cpp
-@@ -58,43 +58,73 @@ public:
+@@ -58,25 +58,53 @@ public:
  } // namespace ABI
  #endif // HAS_UI_VIEW_SETTINGS
  
@@ -791,90 +1622,39 @@ index 026e81cb..3bbc974b 100644
  // Return tablet mode, note: Does not work for GetDesktopWindow().
  bool qt_windowsIsTabletMode(HWND hwnd)
  {
--    bool result = false;
--
--    const wchar_t uiViewSettingsId[] = L"Windows.UI.ViewManagement.UIViewSettings";
--    HSTRING_HEADER uiViewSettingsIdRefHeader;
--    HSTRING uiViewSettingsIdHs = nullptr;
--    const auto uiViewSettingsIdLen = UINT32(sizeof(uiViewSettingsId) / sizeof(uiViewSettingsId[0]) - 1);
--    if (FAILED(WindowsCreateStringReference(uiViewSettingsId, uiViewSettingsIdLen, &uiViewSettingsIdRefHeader, &uiViewSettingsIdHs)))
--        return false;
--
--    IUIViewSettingsInterop *uiViewSettingsInterop = nullptr;
--    // __uuidof(IUIViewSettingsInterop);
--    const GUID uiViewSettingsInteropRefId = {0x3694dbf9, 0x8f68, 0x44be,{0x8f, 0xf5, 0x19, 0x5c, 0x98, 0xed, 0xe8, 0xa6}};
--
--    HRESULT hr = RoGetActivationFactory(uiViewSettingsIdHs, uiViewSettingsInteropRefId,
--                                                   reinterpret_cast<void **>(&uiViewSettingsInterop));
--    if (FAILED(hr))
--        return false;
--
--    //  __uuidof(ABI::Windows::UI::ViewManagement::IUIViewSettings);
--    const GUID uiViewSettingsRefId = {0xc63657f6, 0x8850, 0x470d,{0x88, 0xf8, 0x45, 0x5e, 0x16, 0xea, 0x2c, 0x26}};
--    ABI::Windows::UI::ViewManagement::IUIViewSettings *viewSettings = nullptr;
--    hr = uiViewSettingsInterop->GetForWindow(hwnd, uiViewSettingsRefId,
--                                             reinterpret_cast<void **>(&viewSettings));
--    if (SUCCEEDED(hr)) {
--        ABI::Windows::UI::ViewManagement::UserInteractionMode currentMode;
--        hr = viewSettings->get_UserInteractionMode(&currentMode);
--        if (SUCCEEDED(hr))
--            result = currentMode == 1; // Touch, 1
--        viewSettings->Release();
 +    typedef HRESULT (WINAPI *WindowsCreateStringReference_t)(PCWSTR sourceString, UINT32 length, HSTRING_HEADER *hstringHeader, HSTRING* string);
 +    typedef HRESULT (WINAPI *RoGetActivationFactory_t)(HSTRING activatableClassId, REFIID iid, void** factory);
 +
 +    WindowsCreateStringReference_t WindowsCreateStringReferenceFunc = (WindowsCreateStringReference_t)WIN_LoadComBaseFunction("WindowsCreateStringReference");
 +    RoGetActivationFactory_t RoGetActivationFactoryFunc = (RoGetActivationFactory_t)WIN_LoadComBaseFunction("RoGetActivationFactory");
++    
++    if (!WindowsCreateStringReferenceFunc || !RoGetActivationFactoryFunc)
++        return false;
 +
-+    if (WindowsCreateStringReferenceFunc && RoGetActivationFactoryFunc)
-+    {
-+        bool result = false;
-+
-+        const wchar_t uiViewSettingsId[] = L"Windows.UI.ViewManagement.UIViewSettings";
-+        HSTRING_HEADER uiViewSettingsIdRefHeader;
-+        HSTRING uiViewSettingsIdHs = nullptr;
-+        const auto uiViewSettingsIdLen = UINT32(sizeof(uiViewSettingsId) / sizeof(uiViewSettingsId[0]) - 1);
-+        if (FAILED(WindowsCreateStringReferenceFunc(uiViewSettingsId, uiViewSettingsIdLen, &uiViewSettingsIdRefHeader, &uiViewSettingsIdHs)))
-+            return false;
-+
-+        IUIViewSettingsInterop *uiViewSettingsInterop = nullptr;
-+        // __uuidof(IUIViewSettingsInterop);
-+        const GUID uiViewSettingsInteropRefId = {0x3694dbf9, 0x8f68, 0x44be,{0x8f, 0xf5, 0x19, 0x5c, 0x98, 0xed, 0xe8, 0xa6}};
-+
-+        HRESULT hr = RoGetActivationFactoryFunc(uiViewSettingsIdHs, uiViewSettingsInteropRefId,
-+                                                       reinterpret_cast<void **>(&uiViewSettingsInterop));
-+        if (FAILED(hr))
-+            return false;
-+
-+        //  __uuidof(ABI::Windows::UI::ViewManagement::IUIViewSettings);
-+        const GUID uiViewSettingsRefId = {0xc63657f6, 0x8850, 0x470d,{0x88, 0xf8, 0x45, 0x5e, 0x16, 0xea, 0x2c, 0x26}};
-+        ABI::Windows::UI::ViewManagement::IUIViewSettings *viewSettings = nullptr;
-+        hr = uiViewSettingsInterop->GetForWindow(hwnd, uiViewSettingsRefId,
-+                                                 reinterpret_cast<void **>(&viewSettings));
-+        if (SUCCEEDED(hr)) {
-+            ABI::Windows::UI::ViewManagement::UserInteractionMode currentMode;
-+            hr = viewSettings->get_UserInteractionMode(&currentMode);
-+            if (SUCCEEDED(hr))
-+                result = currentMode == 1; // Touch, 1
-+            viewSettings->Release();
-+        }
-+        uiViewSettingsInterop->Release();
-+        return result;
-     }
--    uiViewSettingsInterop->Release();
--    return result;
-+
-+    return false;
- }
+     bool result = false;
  
--QT_END_NAMESPACE
-+QT_END_NAMESPACE
-\ No newline at end of file
+     const wchar_t uiViewSettingsId[] = L"Windows.UI.ViewManagement.UIViewSettings";
+     HSTRING_HEADER uiViewSettingsIdRefHeader;
+     HSTRING uiViewSettingsIdHs = nullptr;
+     const auto uiViewSettingsIdLen = UINT32(sizeof(uiViewSettingsId) / sizeof(uiViewSettingsId[0]) - 1);
+-    if (FAILED(WindowsCreateStringReference(uiViewSettingsId, uiViewSettingsIdLen, &uiViewSettingsIdRefHeader, &uiViewSettingsIdHs)))
++    if (FAILED(WindowsCreateStringReferenceFunc(uiViewSettingsId, uiViewSettingsIdLen, &uiViewSettingsIdRefHeader, &uiViewSettingsIdHs)))
+         return false;
+ 
+     IUIViewSettingsInterop *uiViewSettingsInterop = nullptr;
+     // __uuidof(IUIViewSettingsInterop);
+     const GUID uiViewSettingsInteropRefId = {0x3694dbf9, 0x8f68, 0x44be,{0x8f, 0xf5, 0x19, 0x5c, 0x98, 0xed, 0xe8, 0xa6}};
+ 
+-    HRESULT hr = RoGetActivationFactory(uiViewSettingsIdHs, uiViewSettingsInteropRefId,
++    HRESULT hr = RoGetActivationFactoryFunc(uiViewSettingsIdHs, uiViewSettingsInteropRefId,
+                                                    reinterpret_cast<void **>(&uiViewSettingsInterop));
+     if (FAILED(hr))
+         return false;
 diff --git a/src/plugins/platforms/windows/qwindowscontext.cpp b/src/plugins/platforms/windows/qwindowscontext.cpp
-index 4aa1b886..946dbb45 100644
+index 4aa1b886..c4d86447 100644
 --- a/src/plugins/platforms/windows/qwindowscontext.cpp
 +++ b/src/plugins/platforms/windows/qwindowscontext.cpp
-@@ -43,6 +43,7 @@
+@@ -43,11 +43,13 @@
  #include <QtCore/qsysinfo.h>
  #include <QtCore/qscopedpointer.h>
  #include <QtCore/quuid.h>
@@ -882,16 +1662,13 @@ index 4aa1b886..946dbb45 100644
  #include <QtCore/private/qwinregistry_p.h>
  #if QT_CONFIG(cpp_winrt)
  #  include <QtCore/private/qfactorycacheregistration_p.h>
-@@ -59,6 +60,8 @@
- #include <wtsapi32.h>
- #include <shellscalingapi.h>
+ #endif
+ #include <QtCore/private/qsystemerror_p.h>
++#include <QtCore/private/qlegacyshims_win_p.h>
  
-+#include "vxkex.h"
-+
- QT_BEGIN_NAMESPACE
- 
- using namespace Qt::StringLiterals;
-@@ -121,6 +124,77 @@ static inline bool sessionManagerInteractionBlocked()
+ #include <QtGui/private/qwindowsguieventdispatcher_p.h>
+ #include <QtGui/private/qwindowsthemecache_p.h>
+@@ -121,6 +123,140 @@ static inline bool sessionManagerInteractionBlocked()
  static inline bool sessionManagerInteractionBlocked() { return false; }
  #endif
  
@@ -909,41 +1686,97 @@ index 4aa1b886..946dbb45 100644
 +void QWindowsUser32DLL::init()
 +{
 +    QSystemLibrary library(QStringLiteral("user32"));
-+    setProcessDPIAware = (SetProcessDPIAware)library.resolve("SetProcessDPIAware");
-+    setProcessDpiAwarenessContext = (SetProcessDpiAwarenessContext)library.resolve("SetProcessDpiAwarenessContext");
-+    getThreadDpiAwarenessContext = (GetThreadDpiAwarenessContext)library.resolve("GetThreadDpiAwarenessContext");
-+    isValidDpiAwarenessContext = (IsValidDpiAwarenessContext)library.resolve("IsValidDpiAwarenessContext");
-+    areDpiAwarenessContextsEqual = (AreDpiAwarenessContextsEqual)library.resolve("AreDpiAwarenessContextsEqual");
-+
 +    addClipboardFormatListener = (AddClipboardFormatListener)library.resolve("AddClipboardFormatListener");
 +    removeClipboardFormatListener = (RemoveClipboardFormatListener)library.resolve("RemoveClipboardFormatListener");
-+
-+    getDisplayAutoRotationPreferences = (GetDisplayAutoRotationPreferences)library.resolve("GetDisplayAutoRotationPreferences");
-+    setDisplayAutoRotationPreferences = (SetDisplayAutoRotationPreferences)library.resolve("SetDisplayAutoRotationPreferences");
++    setProcessDPIAware = (SetProcessDPIAware)library.resolve("SetProcessDPIAware");
 +
 +    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows8) {
-+        enableMouseInPointer = (EnableMouseInPointer)library.resolve("EnableMouseInPointer");
-+        getPointerType = (GetPointerType)library.resolve("GetPointerType");
-+        getPointerInfo = (GetPointerInfo)library.resolve("GetPointerInfo");
-+        getPointerDeviceRects = (GetPointerDeviceRects)library.resolve("GetPointerDeviceRects");
-+        getPointerTouchInfo = (GetPointerTouchInfo)library.resolve("GetPointerTouchInfo");
-+        getPointerFrameTouchInfo = (GetPointerFrameTouchInfo)library.resolve("GetPointerFrameTouchInfo");
-+        getPointerFrameTouchInfoHistory = (GetPointerFrameTouchInfoHistory)library.resolve("GetPointerFrameTouchInfoHistory");
-+        getPointerPenInfo = (GetPointerPenInfo)library.resolve("GetPointerPenInfo");
-+        getPointerPenInfoHistory = (GetPointerPenInfoHistory)library.resolve("GetPointerPenInfoHistory");
-+        skipPointerFrameMessages = (SkipPointerFrameMessages)library.resolve("SkipPointerFrameMessages");
++        getDisplayAutoRotationPreferences = (GetDisplayAutoRotationPreferences)library.resolve("GetDisplayAutoRotationPreferences");
++    setDisplayAutoRotationPreferences = (SetDisplayAutoRotationPreferences)library.resolve("SetDisplayAutoRotationPreferences");
 +    }
++    enableMouseInPointer = (EnableMouseInPointer)library.resolve("EnableMouseInPointer");
++    if (!enableMouseInPointer)
++        enableMouseInPointer = reinterpret_cast<EnableMouseInPointer>(QLegacyShims::EnableMouseInPointer);
++
++    getPointerType = (GetPointerType)library.resolve("GetPointerType");
++    if (!getPointerType)
++        getPointerType = reinterpret_cast<GetPointerType>(QLegacyShims::GetPointerType);
++
++    getPointerInfo = (GetPointerInfo)library.resolve("GetPointerInfo");
++    if (!getPointerInfo)
++        getPointerInfo = reinterpret_cast<GetPointerInfo>(QLegacyShims::GetPointerInfo);
++
++    getPointerDeviceRects = (GetPointerDeviceRects)library.resolve("GetPointerDeviceRects");
++    if (!getPointerDeviceRects)
++        getPointerDeviceRects = reinterpret_cast<GetPointerDeviceRects>(QLegacyShims::GetPointerDeviceRects);
++
++    getPointerTouchInfo = (GetPointerTouchInfo)library.resolve("GetPointerTouchInfo");
++    if (!getPointerTouchInfo)
++        getPointerTouchInfo = reinterpret_cast<GetPointerTouchInfo>(QLegacyShims::GetPointerTouchInfo);
++
++    getPointerFrameTouchInfo = (GetPointerFrameTouchInfo)library.resolve("GetPointerFrameTouchInfo");
++    if (!getPointerFrameTouchInfo)
++        getPointerFrameTouchInfo = reinterpret_cast<GetPointerFrameTouchInfo>(QLegacyShims::GetPointerFrameTouchInfo);
++
++    getPointerFrameTouchInfoHistory = (GetPointerFrameTouchInfoHistory)library.resolve("GetPointerFrameTouchInfoHistory");
++    if (!getPointerFrameTouchInfoHistory)
++        getPointerFrameTouchInfoHistory = reinterpret_cast<GetPointerFrameTouchInfoHistory>(QLegacyShims::GetPointerFrameTouchInfoHistory);
++
++    getPointerPenInfo = (GetPointerPenInfo)library.resolve("GetPointerPenInfo");
++    if (!getPointerPenInfo)
++        getPointerPenInfo = reinterpret_cast<GetPointerPenInfo>(QLegacyShims::GetPointerPenInfo);
++
++    getPointerPenInfoHistory = (GetPointerPenInfoHistory)library.resolve("GetPointerPenInfoHistory");
++    if (!getPointerPenInfoHistory)
++        getPointerPenInfoHistory = reinterpret_cast<GetPointerPenInfoHistory>(QLegacyShims::GetPointerPenInfoHistory);
++
++    skipPointerFrameMessages = (SkipPointerFrameMessages)library.resolve("SkipPointerFrameMessages");
++    if (!skipPointerFrameMessages)
++        skipPointerFrameMessages = reinterpret_cast<SkipPointerFrameMessages>(QLegacyShims::SkipPointerFrameMessages);
 +    
-+    if (QOperatingSystemVersion::current()
-+        >= QOperatingSystemVersion(QOperatingSystemVersion::Windows, 10, 0, 14393)) {
-+        adjustWindowRectExForDpi = (AdjustWindowRectExForDpi)library.resolve("AdjustWindowRectExForDpi");
-+        enableNonClientDpiScaling = (EnableNonClientDpiScaling)library.resolve("EnableNonClientDpiScaling");
-+        getWindowDpiAwarenessContext = (GetWindowDpiAwarenessContext)library.resolve("GetWindowDpiAwarenessContext");
-+        getAwarenessFromDpiAwarenessContext = (GetAwarenessFromDpiAwarenessContext)library.resolve("GetAwarenessFromDpiAwarenessContext");
-+        systemParametersInfoForDpi = (SystemParametersInfoForDpi)library.resolve("SystemParametersInfoForDpi");
-+        getDpiForWindow = (GetDpiForWindow)library.resolve("GetDpiForWindow");
-+        getSystemMetricsForDpi = (GetSystemMetricsForDpi)library.resolve("GetSystemMetricsForDpi");
-+    }
++    adjustWindowRectExForDpi = (AdjustWindowRectExForDpi)library.resolve("AdjustWindowRectExForDpi");
++    if (!adjustWindowRectExForDpi)
++        adjustWindowRectExForDpi = reinterpret_cast<AdjustWindowRectExForDpi>(QLegacyShims::AdjustWindowRectExForDpi);
++
++    enableNonClientDpiScaling = (EnableNonClientDpiScaling)library.resolve("EnableNonClientDpiScaling");
++    if (!enableNonClientDpiScaling)
++        enableNonClientDpiScaling = reinterpret_cast<EnableNonClientDpiScaling>(QLegacyShims::EnableNonClientDpiScaling);
++
++    getWindowDpiAwarenessContext = (GetWindowDpiAwarenessContext)library.resolve("GetWindowDpiAwarenessContext");
++    if (!getWindowDpiAwarenessContext)
++        getWindowDpiAwarenessContext = reinterpret_cast<GetWindowDpiAwarenessContext>(QLegacyShims::GetWindowDpiAwarenessContext);
++
++    getAwarenessFromDpiAwarenessContext = (GetAwarenessFromDpiAwarenessContext)library.resolve("GetAwarenessFromDpiAwarenessContext");
++    if (!getAwarenessFromDpiAwarenessContext)
++        getAwarenessFromDpiAwarenessContext = reinterpret_cast<GetAwarenessFromDpiAwarenessContext>(QLegacyShims::GetAwarenessFromDpiAwarenessContext);
++
++    setProcessDpiAwarenessContext = (SetProcessDpiAwarenessContext)library.resolve("SetProcessDpiAwarenessContext");
++    if (!setProcessDpiAwarenessContext)
++        setProcessDpiAwarenessContext = reinterpret_cast<SetProcessDpiAwarenessContext>(QLegacyShims::SetProcessDpiAwarenessContext);
++
++    getThreadDpiAwarenessContext = (GetThreadDpiAwarenessContext)library.resolve("GetThreadDpiAwarenessContext");
++    if (!getThreadDpiAwarenessContext)
++        getThreadDpiAwarenessContext = reinterpret_cast<GetThreadDpiAwarenessContext>(QLegacyShims::GetThreadDpiAwarenessContext);
++
++    isValidDpiAwarenessContext = (IsValidDpiAwarenessContext)library.resolve("IsValidDpiAwarenessContext");
++    if (!isValidDpiAwarenessContext)
++        isValidDpiAwarenessContext = reinterpret_cast<IsValidDpiAwarenessContext>(QLegacyShims::IsValidDpiAwarenessContext);
++
++    areDpiAwarenessContextsEqual = (AreDpiAwarenessContextsEqual)library.resolve("AreDpiAwarenessContextsEqual");
++    if (!areDpiAwarenessContextsEqual)
++        areDpiAwarenessContextsEqual = reinterpret_cast<AreDpiAwarenessContextsEqual>(QLegacyShims::AreDpiAwarenessContextsEqual);
++
++    systemParametersInfoForDpi = (SystemParametersInfoForDpi)library.resolve("SystemParametersInfoForDpi");
++    if (!systemParametersInfoForDpi)
++        systemParametersInfoForDpi = reinterpret_cast<SystemParametersInfoForDpi>(QLegacyShims::SystemParametersInfoForDpi);
++
++    getDpiForWindow = (GetDpiForWindow)library.resolve("GetDpiForWindow");
++    if (!getDpiForWindow)
++        getDpiForWindow = reinterpret_cast<GetDpiForWindow>(QLegacyShims::GetDpiForWindow);
++
++    getSystemMetricsForDpi = (GetSystemMetricsForDpi)library.resolve("GetSystemMetricsForDpi");
++    if (!getSystemMetricsForDpi)
++        getSystemMetricsForDpi = reinterpret_cast<GetSystemMetricsForDpi>(QLegacyShims::GetSystemMetricsForDpi);
 +}
 +
 +bool QWindowsUser32DLL::supportsPointerApi()
@@ -955,12 +1788,19 @@ index 4aa1b886..946dbb45 100644
 +
 +void QWindowsShcoreDLL::init()
 +{
-+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion::Windows8_1)
-+        return;
 +    QSystemLibrary library(QStringLiteral("SHCore"));
++    
 +    getProcessDpiAwareness = (GetProcessDpiAwareness)library.resolve("GetProcessDpiAwareness");
++    if (!getProcessDpiAwareness)
++        getProcessDpiAwareness = reinterpret_cast<GetProcessDpiAwareness>(QLegacyShims::GetProcessDpiAwareness);
++
 +    setProcessDpiAwareness = (SetProcessDpiAwareness)library.resolve("SetProcessDpiAwareness");
++    if (!setProcessDpiAwareness)
++        setProcessDpiAwareness = reinterpret_cast<SetProcessDpiAwareness>(QLegacyShims::SetProcessDpiAwareness);
++
 +    getDpiForMonitor = (GetDpiForMonitor)library.resolve("GetDpiForMonitor");
++    if (!getDpiForMonitor)
++        getDpiForMonitor = reinterpret_cast<GetDpiForMonitor>(QLegacyShims::GetDpiForMonitor);
 +}
 +
 +QWindowsUser32DLL QWindowsContext::user32dll;
@@ -969,23 +1809,23 @@ index 4aa1b886..946dbb45 100644
  QWindowsContext *QWindowsContext::m_instance = nullptr;
  
  /*!
-@@ -161,6 +235,9 @@ bool QWindowsContextPrivate::m_v2DpiAware = false;
+@@ -161,6 +297,9 @@ bool QWindowsContextPrivate::m_v2DpiAware = false;
  QWindowsContextPrivate::QWindowsContextPrivate()
      : m_oleInitializeResult(OleInitialize(nullptr))
  {
 +    QWindowsContext::user32dll.init();
 +    QWindowsContext::shcoredll.init();
-+    
++
      if (m_pointerHandler.touchDevice())
          m_systemInfo |= QWindowsContext::SI_SupportsTouch;
      m_displayContext = GetDC(nullptr);
-@@ -338,19 +415,39 @@ void QWindowsContext::setDetectAltGrModifier(bool a)
- [[nodiscard]] static inline QtWindows::DpiAwareness
+@@ -339,26 +478,28 @@ void QWindowsContext::setDetectAltGrModifier(bool a)
      dpiAwarenessContextToQtDpiAwareness(DPI_AWARENESS_CONTEXT context)
  {
--    // IsValidDpiAwarenessContext() will handle the NULL pointer case.
+     // IsValidDpiAwarenessContext() will handle the NULL pointer case.
 -    if (!IsValidDpiAwarenessContext(context))
--        return QtWindows::DpiAwareness::Invalid;
++    if (QWindowsContext::user32dll.isValidDpiAwarenessContext && !QWindowsContext::user32dll.isValidDpiAwarenessContext(context))
+         return QtWindows::DpiAwareness::Invalid;
 -    if (AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED))
 -        return QtWindows::DpiAwareness::Unaware_GdiScaled;
 -    if (AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
@@ -996,11 +1836,7 @@ index 4aa1b886..946dbb45 100644
 -        return QtWindows::DpiAwareness::System;
 -    if (AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_UNAWARE))
 -        return QtWindows::DpiAwareness::Unaware;
-+    if (QWindowsContext::user32dll.isValidDpiAwarenessContext && QWindowsContext::user32dll.areDpiAwarenessContextsEqual)
-+    {
-+        // IsValidDpiAwarenessContext() will handle the NULL pointer case.
-+        if (!QWindowsContext::user32dll.isValidDpiAwarenessContext(context))
-+            return QtWindows::DpiAwareness::Invalid;
++    if (QWindowsContext::user32dll.areDpiAwarenessContextsEqual) {
 +        if (QWindowsContext::user32dll.areDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED))
 +            return QtWindows::DpiAwareness::Unaware_GdiScaled;
 +        if (QWindowsContext::user32dll.areDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
@@ -1012,101 +1848,66 @@ index 4aa1b886..946dbb45 100644
 +        if (QWindowsContext::user32dll.areDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_UNAWARE))
 +            return QtWindows::DpiAwareness::Unaware;
 +    }
-+    else
-+    {
-+        // IsValidDpiAwarenessContext() will handle the NULL pointer case.
-+        if (!vxkex::IsValidDpiAwarenessContext(context))
-+            return QtWindows::DpiAwareness::Invalid;
-+        if (vxkex::AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED))
-+            return QtWindows::DpiAwareness::Unaware_GdiScaled;
-+        if (vxkex::AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
-+            return QtWindows::DpiAwareness::PerMonitorVersion2;
-+        if (vxkex::AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE))
-+            return QtWindows::DpiAwareness::PerMonitor;
-+        if (vxkex::AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_SYSTEM_AWARE))
-+            return QtWindows::DpiAwareness::System;
-+        if (vxkex::AreDpiAwarenessContextsEqual(context, DPI_AWARENESS_CONTEXT_UNAWARE))
-+            return QtWindows::DpiAwareness::Unaware;
-+    }
-+    
      return QtWindows::DpiAwareness::Invalid;
  }
  
-@@ -358,7 +455,11 @@ QtWindows::DpiAwareness QWindowsContext::windowDpiAwareness(HWND hwnd)
+ QtWindows::DpiAwareness QWindowsContext::windowDpiAwareness(HWND hwnd)
  {
-     if (!hwnd)
+-    if (!hwnd)
++    if (!hwnd || !QWindowsContext::user32dll.getWindowDpiAwarenessContext)
          return QtWindows::DpiAwareness::Invalid;
 -    const auto context = GetWindowDpiAwarenessContext(hwnd);
-+
-+    const auto context = QWindowsContext::user32dll.getWindowDpiAwarenessContext ? 
-+            QWindowsContext::user32dll.getWindowDpiAwarenessContext(hwnd) :
-+                vxkex::GetWindowDpiAwarenessContext(hwnd);
-+
++    const auto context = QWindowsContext::user32dll.getWindowDpiAwarenessContext(hwnd);
      return dpiAwarenessContextToQtDpiAwareness(context);
  }
  
-@@ -371,7 +472,9 @@ QtWindows::DpiAwareness QWindowsContext::processDpiAwareness()
+@@ -371,7 +512,9 @@ QtWindows::DpiAwareness QWindowsContext::processDpiAwareness()
      // return the default DPI_AWARENESS_CONTEXT for the process if
      // SetThreadDpiAwarenessContext() was never called. So we can use
      // it as an equivalent.
 -    const auto context = GetThreadDpiAwarenessContext();
-+    const DPI_AWARENESS_CONTEXT context = QWindowsContext::user32dll.getThreadDpiAwarenessContext ? 
-+        QWindowsContext::user32dll.getThreadDpiAwarenessContext() :
-+            vxkex::GetThreadDpiAwarenessContext();
++    if (!QWindowsContext::user32dll.getThreadDpiAwarenessContext)
++        return QtWindows::DpiAwareness::Invalid;
++    const auto context = QWindowsContext::user32dll.getThreadDpiAwarenessContext();
      return dpiAwarenessContextToQtDpiAwareness(context);
  }
  
-@@ -431,11 +534,21 @@ bool QWindowsContext::setProcessDpiAwareness(QtWindows::DpiAwareness dpiAwarenes
+@@ -431,11 +574,11 @@ bool QWindowsContext::setProcessDpiAwareness(QtWindows::DpiAwareness dpiAwarenes
      if (processDpiAwareness() == dpiAwareness)
          return true;
      const auto context = qtDpiAwarenessToDpiAwarenessContext(dpiAwareness);
 -    if (!IsValidDpiAwarenessContext(context)) {
-+
-+    BOOL bResultIsValid = QWindowsContext::user32dll.isValidDpiAwarenessContext ? 
-+            QWindowsContext::user32dll.isValidDpiAwarenessContext(context) : 
-+                vxkex::IsValidDpiAwarenessContext(context);
-+
-+    if (!bResultIsValid) {
++    if (!QWindowsContext::user32dll.isValidDpiAwarenessContext || !QWindowsContext::user32dll.isValidDpiAwarenessContext(context)) {
          qCWarning(lcQpaWindow) << dpiAwareness << "is not supported by current system.";
          return false;
      }
 -    if (!SetProcessDpiAwarenessContext(context)) {
-+
-+    BOOL bResultSet = QWindowsContext::user32dll.setProcessDpiAwarenessContext ? 
-+        QWindowsContext::user32dll.setProcessDpiAwarenessContext(context) : 
-+            vxkex::SetProcessDpiAwarenessContext(context);
-+
-+    if (!bResultSet) {
++    if (!QWindowsContext::user32dll.setProcessDpiAwarenessContext || !QWindowsContext::user32dll.setProcessDpiAwarenessContext(context)) {
          qCWarning(lcQpaWindow).noquote().nospace()
              << "SetProcessDpiAwarenessContext() failed: "
              << QSystemError::windowsString()
-@@ -868,9 +981,9 @@ void QWindowsContext::forceNcCalcSize(HWND hwnd)
+@@ -868,8 +1011,8 @@ void QWindowsContext::forceNcCalcSize(HWND hwnd)
  bool QWindowsContext::systemParametersInfo(unsigned action, unsigned param, void *out,
                                             unsigned dpi)
  {
 -    const BOOL result = dpi != 0
 -        ? SystemParametersInfoForDpi(action, param, out, 0, dpi)
--        : SystemParametersInfo(action, param, out, 0);
 +    const BOOL result = (QWindowsContext::user32dll.systemParametersInfoForDpi != nullptr && dpi != 0)
 +        ? QWindowsContext::user32dll.systemParametersInfoForDpi(action, param, out, 0, dpi)
-+        : vxkex::SystemParametersInfoForDpi(action, param, out, 0, dpi);
+         : SystemParametersInfo(action, param, out, 0);
      return result == TRUE;
  }
- 
-@@ -957,7 +1070,10 @@ static bool enableNonClientDpiScaling(HWND hwnd)
+@@ -957,7 +1100,7 @@ static bool enableNonClientDpiScaling(HWND hwnd)
  {
      bool result = false;
      if (QWindowsContext::windowDpiAwareness(hwnd) == QtWindows::DpiAwareness::PerMonitor) {
 -        result = EnableNonClientDpiScaling(hwnd) != FALSE;
-+        result = QWindowsContext::user32dll.enableNonClientDpiScaling ? 
-+            (QWindowsContext::user32dll.enableNonClientDpiScaling(hwnd) != FALSE) : 
-+                (vxkex::EnableNonClientDpiScaling(hwnd) != FALSE);
-+
++        result = !QWindowsContext::user32dll.enableNonClientDpiScaling || (QWindowsContext::user32dll.enableNonClientDpiScaling(hwnd) != FALSE);
          if (!result) {
              const DWORD errorCode = GetLastError();
              qErrnoWarning(int(errorCode), "EnableNonClientDpiScaling() failed for HWND %p (%lu)",
 diff --git a/src/plugins/platforms/windows/qwindowscontext.h b/src/plugins/platforms/windows/qwindowscontext.h
-index 3d9a22ac..5adc9211 100644
+index 3d9a22ac..869d6ebd 100644
 --- a/src/plugins/platforms/windows/qwindowscontext.h
 +++ b/src/plugins/platforms/windows/qwindowscontext.h
 @@ -14,6 +14,7 @@
@@ -1141,8 +1942,8 @@ index 3d9a22ac..5adc9211 100644
 +    typedef BOOL (WINAPI *SetProcessDpiAwarenessContext)(HANDLE);
 +    typedef BOOL (WINAPI *AddClipboardFormatListener)(HWND);
 +    typedef BOOL (WINAPI *RemoveClipboardFormatListener)(HWND);
-+    typedef BOOL (WINAPI *GetDisplayAutoRotationPreferences)(DWORD *);
-+    typedef BOOL (WINAPI *SetDisplayAutoRotationPreferences)(DWORD);
++    typedef BOOL (WINAPI *GetDisplayAutoRotationPreferences)(ORIENTATION_PREFERENCE *);
++    typedef BOOL (WINAPI *SetDisplayAutoRotationPreferences)(ORIENTATION_PREFERENCE);
 +    typedef BOOL (WINAPI *AdjustWindowRectExForDpi)(LPRECT,DWORD,BOOL,DWORD,UINT);
 +    typedef BOOL (WINAPI *EnableNonClientDpiScaling)(HWND);
 +    typedef DPI_AWARENESS_CONTEXT (WINAPI *GetWindowDpiAwarenessContext)(HWND);
@@ -1213,65 +2014,38 @@ index 3d9a22ac..5adc9211 100644
  class QWindowsContext
  {
      Q_DISABLE_COPY_MOVE(QWindowsContext)
-@@ -135,6 +225,9 @@ public:
+@@ -134,6 +224,9 @@ public:
+     QWindowsMimeRegistry &mimeConverter() const;
      QWindowsScreenManager &screenManager();
      QWindowsTabletSupport *tabletSupport() const;
- 
++    
 +    static QWindowsUser32DLL user32dll;
 +    static QWindowsShcoreDLL shcoredll;
-+
+ 
      bool asyncExpose() const;
      void setAsyncExpose(bool value);
- 
 diff --git a/src/plugins/platforms/windows/qwindowsdrag.cpp b/src/plugins/platforms/windows/qwindowsdrag.cpp
-index ccc7d8f1..bff92e68 100644
+index ccc7d8f1..e565b998 100644
 --- a/src/plugins/platforms/windows/qwindowsdrag.cpp
 +++ b/src/plugins/platforms/windows/qwindowsdrag.cpp
-@@ -33,6 +33,8 @@
- 
- #include <shlobj.h>
- 
-+#include "vxkex.h"
-+
- QT_BEGIN_NAMESPACE
- 
- /*!
-@@ -674,7 +676,11 @@ static HRESULT startDoDragDrop(LPDATAOBJECT pDataObj, LPDROPSOURCE pDropSource,
+@@ -674,7 +674,7 @@ static HRESULT startDoDragDrop(LPDATAOBJECT pDataObj, LPDROPSOURCE pDropSource,
                  const quint32 pointerId = GET_POINTERID_WPARAM(msg.wParam);
  
                  POINTER_INFO pointerInfo{};
 -                if (!GetPointerInfo(pointerId, &pointerInfo))
-+                BOOL bResultPointerInfo = QWindowsContext::user32dll.getPointerInfo ? 
-+                    QWindowsContext::user32dll.getPointerInfo(pointerId, &pointerInfo) : 
-+                        vxkex::GetPointerInfo(pointerId, &pointerInfo);
-+
-+                if (!bResultPointerInfo)
++                if (!QWindowsContext::user32dll.getPointerInfo || !QWindowsContext::user32dll.getPointerInfo(pointerId, &pointerInfo))
                      return E_FAIL;
  
                  if (pointerInfo.pointerFlags & POINTER_FLAG_PRIMARY) {
 diff --git a/src/plugins/platforms/windows/qwindowsintegration.cpp b/src/plugins/platforms/windows/qwindowsintegration.cpp
-index 25c15861..07eae21c 100644
+index 25c15861..837027df 100644
 --- a/src/plugins/platforms/windows/qwindowsintegration.cpp
 +++ b/src/plugins/platforms/windows/qwindowsintegration.cpp
-@@ -139,6 +139,12 @@ static inline unsigned parseOptions(const QStringList &paramList,
-                                     DarkModeHandling *darkModeHandling)
- {
-     unsigned options = 0;
-+
-+    if (QOperatingSystemVersion::current() < QOperatingSystemVersion(QOperatingSystemVersion::Windows, 10, 0, 17763)) {
-+        // https://github.com/crystalidea/qt6windows7/issues/26
-+        options |= QWindowsIntegration::DontUseDirectWriteFonts;
-+    }
-+
-     for (const QString &param : paramList) {
-         if (param.startsWith(u"fontengine=")) {
-             if (param.endsWith(u"gdi")) {
-@@ -484,7 +490,14 @@ QPlatformFontDatabase *QWindowsIntegration::fontDatabase() const
+@@ -484,7 +484,13 @@ QPlatformFontDatabase *QWindowsIntegration::fontDatabase() const
          else
  #endif // QT_NO_FREETYPE
  #if QT_CONFIG(directwrite3)
 -        if (!(d->m_options & (QWindowsIntegration::FontDatabaseGDI | QWindowsIntegration::DontUseDirectWriteFonts)))
-+
 +        /* IDWriteFontFace3 is only reportedly available starting with Windows 10. This change is necessary starting
 +        with Qt 6.8, where DirectWrite is used by default to populate the font database. 
 +        More info: https://github.com/videolan/vlc/blob/master/contrib/src/qt/0001-Use-DirectWrite-font-database-only-with-Windows-10-a.patch
@@ -1283,232 +2057,151 @@ index 25c15861..07eae21c 100644
          else
  #endif
 diff --git a/src/plugins/platforms/windows/qwindowskeymapper.cpp b/src/plugins/platforms/windows/qwindowskeymapper.cpp
-index 5b8e4e58..5c84b477 100644
+index 5b8e4e58..2da0fb20 100644
 --- a/src/plugins/platforms/windows/qwindowskeymapper.cpp
 +++ b/src/plugins/platforms/windows/qwindowskeymapper.cpp
-@@ -17,6 +17,8 @@
- #include <QtCore/private/qdebug_p.h>
- #include <QtCore/private/qtools_p.h>
- 
-+#include "vxkex.h"
-+
- #if defined(WM_APPCOMMAND)
- #  ifndef FAPPCOMMAND_MOUSE
- #    define FAPPCOMMAND_MOUSE 0x8000
-@@ -732,14 +734,17 @@ static inline QString messageKeyText(const MSG &msg)
+@@ -732,14 +732,18 @@ static inline QString messageKeyText(const MSG &msg)
  
  [[nodiscard]] static inline int getTitleBarHeight(const HWND hwnd)
  {
 -    const UINT dpi = GetDpiForWindow(hwnd);
 -    const int captionHeight = GetSystemMetricsForDpi(SM_CYCAPTION, dpi);
-+    const BOOL bNewAPI = (QWindowsContext::user32dll.getSystemMetricsForDpi != nullptr);
-+    const UINT dpi = bNewAPI ? QWindowsContext::user32dll.getDpiForWindow(hwnd) : vxkex::GetDpiForWindow(hwnd);
-+    const int captionHeight = bNewAPI ? QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CYCAPTION, dpi) : vxkex::GetSystemMetricsForDpi(SM_CYCAPTION, dpi);
++    const UINT dpi = QWindowsContext::user32dll.getDpiForWindow ? QWindowsContext::user32dll.getDpiForWindow(hwnd) : GetDeviceCaps(GetDC(NULL), LOGPIXELSX);
++    const int captionHeight = QWindowsContext::user32dll.getSystemMetricsForDpi ? QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CYCAPTION, dpi) : GetSystemMetrics(SM_CYCAPTION);
      if (IsZoomed(hwnd))
          return captionHeight;
      // The frame height should also be taken into account if the window
      // is not maximized.
 -    const int frameHeight = GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi)
 -                            + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-+    const int frameHeight = bNewAPI ? 
-+        (QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi))
-+        : (vxkex::GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi) + vxkex::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi));
-+
++    int frameHeight;
++    if (QWindowsContext::user32dll.getSystemMetricsForDpi)
++        frameHeight = QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CYSIZEFRAME, dpi)
++                                + QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
++    else
++        frameHeight = GetSystemMetrics(SM_CYSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
      return captionHeight + frameHeight;
  }
  
 diff --git a/src/plugins/platforms/windows/qwindowspointerhandler.cpp b/src/plugins/platforms/windows/qwindowspointerhandler.cpp
-index 79957164..fab22b39 100644
+index 79957164..809199a2 100644
 --- a/src/plugins/platforms/windows/qwindowspointerhandler.cpp
 +++ b/src/plugins/platforms/windows/qwindowspointerhandler.cpp
-@@ -26,6 +26,8 @@
- 
- #include <windowsx.h>
- 
-+#include "vxkex.h"
-+
- QT_BEGIN_NAMESPACE
- 
- enum {
-@@ -55,7 +57,11 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
+@@ -55,7 +55,7 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
      *result = 0;
      const quint32 pointerId = GET_POINTERID_WPARAM(msg.wParam);
  
 -    if (!GetPointerType(pointerId, &m_pointerType)) {
-+    BOOL bResultPt = QWindowsContext::user32dll.getPointerType ? 
-+        QWindowsContext::user32dll.getPointerType(pointerId, &m_pointerType) : 
-+            vxkex::GetPointerType(pointerId, &m_pointerType);
-+
-+    if (!bResultPt) {
++    if (!QWindowsContext::user32dll.getPointerType || !QWindowsContext::user32dll.getPointerType(pointerId, &m_pointerType)) {
          qWarning() << "GetPointerType() failed:" << qt_error_string();
          return false;
      }
-@@ -69,12 +75,21 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
+@@ -69,12 +69,12 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
      }
      case QT_PT_TOUCH: {
          quint32 pointerCount = 0;
 -        if (!GetPointerFrameTouchInfo(pointerId, &pointerCount, nullptr)) {
-+        BOOL bResultPointerTouchInfo = QWindowsContext::user32dll.getPointerFrameTouchInfo ? 
-+            QWindowsContext::user32dll.getPointerFrameTouchInfo(pointerId, &pointerCount, nullptr) : 
-+                vxkex::GetPointerFrameTouchInfo(pointerId, &pointerCount, nullptr);
-+
-+        if (!bResultPointerTouchInfo) {
++        if (!QWindowsContext::user32dll.getPointerFrameTouchInfo || !QWindowsContext::user32dll.getPointerFrameTouchInfo(pointerId, &pointerCount, nullptr)) {
              qWarning() << "GetPointerFrameTouchInfo() failed:" << qt_error_string();
              return false;
          }
          QVarLengthArray<POINTER_TOUCH_INFO, 10> touchInfo(pointerCount);
 -        if (!GetPointerFrameTouchInfo(pointerId, &pointerCount, touchInfo.data())) {
-+
-+        bResultPointerTouchInfo = QWindowsContext::user32dll.getPointerFrameTouchInfo ? 
-+            QWindowsContext::user32dll.getPointerFrameTouchInfo(pointerId, &pointerCount, touchInfo.data()) : 
-+                vxkex::GetPointerFrameTouchInfo(pointerId, &pointerCount, touchInfo.data());
-+
-+        if (!bResultPointerTouchInfo) {
++        if (!QWindowsContext::user32dll.getPointerFrameTouchInfo || !QWindowsContext::user32dll.getPointerFrameTouchInfo(pointerId, &pointerCount, touchInfo.data())) {
              qWarning() << "GetPointerFrameTouchInfo() failed:" << qt_error_string();
              return false;
          }
-@@ -87,10 +102,12 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
+@@ -87,7 +87,7 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
          // dispatch any skipped frames if event compression is disabled by the app
          if (historyCount > 1 && !QCoreApplication::testAttribute(Qt::AA_CompressHighFrequencyEvents)) {
              touchInfo.resize(pointerCount * historyCount);
 -            if (!GetPointerFrameTouchInfoHistory(pointerId,
--                                                 &historyCount,
--                                                 &pointerCount,
--                                                 touchInfo.data())) {
-+
-+            BOOL bResultTouchHistory = QWindowsContext::user32dll.getPointerFrameTouchInfoHistory ?
-+                QWindowsContext::user32dll.getPointerFrameTouchInfoHistory(pointerId, &historyCount, &pointerCount, touchInfo.data()) :
-+                    vxkex::GetPointerFrameTouchInfoHistory(pointerId, &historyCount, &pointerCount, touchInfo.data());
-+
-+            if (!bResultTouchHistory) {
-                 qWarning() << "GetPointerFrameTouchInfoHistory() failed:" << qt_error_string();
-                 return false;
-             }
-@@ -108,7 +125,11 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
++            if (!QWindowsContext::user32dll.getPointerFrameTouchInfoHistory || !QWindowsContext::user32dll.getPointerFrameTouchInfoHistory(pointerId,
+                                                  &historyCount,
+                                                  &pointerCount,
+                                                  touchInfo.data())) {
+@@ -108,7 +108,7 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
      }
      case QT_PT_PEN: {
          POINTER_PEN_INFO penInfo;
 -        if (!GetPointerPenInfo(pointerId, &penInfo)) {
-+
-+        BOOL bResultPenInfo = QWindowsContext::user32dll.getPointerPenInfo ? 
-+            QWindowsContext::user32dll.getPointerPenInfo(pointerId, &penInfo) : vxkex::GetPointerPenInfo(pointerId, &penInfo);
-+
-+        if (!bResultPenInfo) {
++        if (!QWindowsContext::user32dll.getPointerPenInfo || !QWindowsContext::user32dll.getPointerPenInfo(pointerId, &penInfo)) {
              qWarning() << "GetPointerPenInfo() failed:" << qt_error_string();
              return false;
          }
-@@ -120,7 +141,11 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
+@@ -120,7 +120,7 @@ bool QWindowsPointerHandler::translatePointerEvent(QWindow *window, HWND hwnd, Q
                  || !QCoreApplication::testAttribute(Qt::AA_CompressTabletEvents))) {
              QVarLengthArray<POINTER_PEN_INFO, 10> penInfoHistory(historyCount);
  
 -            if (!GetPointerPenInfoHistory(pointerId, &historyCount, penInfoHistory.data())) {
-+            BOOL bResultPenInfoHistory = QWindowsContext::user32dll.getPointerPenInfoHistory ?
-+                QWindowsContext::user32dll.getPointerPenInfoHistory(pointerId, &historyCount, penInfoHistory.data()) : 
-+                    vxkex::GetPointerPenInfoHistory(pointerId, &historyCount, penInfoHistory.data());
-+
-+            if (!bResultPenInfoHistory) {
++            if (!QWindowsContext::user32dll.getPointerPenInfoHistory || !QWindowsContext::user32dll.getPointerPenInfoHistory(pointerId, &historyCount, penInfoHistory.data())) {
                  qWarning() << "GetPointerPenInfoHistory() failed:" << qt_error_string();
                  return false;
              }
-@@ -527,7 +552,10 @@ bool QWindowsPointerHandler::translateTouchEvent(QWindow *window, HWND hwnd,
+@@ -527,7 +527,8 @@ bool QWindowsPointerHandler::translateTouchEvent(QWindow *window, HWND hwnd,
          inputIds.insert(touchPoint.id);
  
          // Avoid getting repeated messages for this frame if there are multiple pointerIds
 -        SkipPointerFrameMessages(touchInfo[i].pointerInfo.pointerId);
 +        if (QWindowsContext::user32dll.skipPointerFrameMessages)
 +            QWindowsContext::user32dll.skipPointerFrameMessages(touchInfo[i].pointerInfo.pointerId);
-+        else
-+            vxkex::SkipPointerFrameMessages(touchInfo[i].pointerInfo.pointerId);
      }
  
      // Some devices send touches for each finger in a different message/frame, instead of consolidating
-@@ -574,7 +602,12 @@ bool QWindowsPointerHandler::translatePenEvent(QWindow *window, HWND hwnd, QtWin
+@@ -574,7 +575,7 @@ bool QWindowsPointerHandler::translatePenEvent(QWindow *window, HWND hwnd, QtWin
      auto *penInfo = static_cast<POINTER_PEN_INFO *>(vPenInfo);
  
      RECT pRect, dRect;
 -    if (!GetPointerDeviceRects(penInfo->pointerInfo.sourceDevice, &pRect, &dRect))
-+
-+    BOOL bResultDeviceRects = QWindowsContext::user32dll.getPointerDeviceRects ? 
-+        QWindowsContext::user32dll.getPointerDeviceRects(penInfo->pointerInfo.sourceDevice, &pRect, &dRect) : 
-+            vxkex::GetPointerDeviceRects(penInfo->pointerInfo.sourceDevice, &pRect, &dRect);
-+
-+    if (!bResultDeviceRects)
++    if (!QWindowsContext::user32dll.getPointerDeviceRects || !QWindowsContext::user32dll.getPointerDeviceRects(penInfo->pointerInfo.sourceDevice, &pRect, &dRect))
          return false;
  
      const auto systemId = (qint64)penInfo->pointerInfo.sourceDevice;
 diff --git a/src/plugins/platforms/windows/qwindowsscreen.cpp b/src/plugins/platforms/windows/qwindowsscreen.cpp
-index eec8f639..54dfa86d 100644
+index 0a4a0db7..ac7dc13a 100644
 --- a/src/plugins/platforms/windows/qwindowsscreen.cpp
 +++ b/src/plugins/platforms/windows/qwindowsscreen.cpp
-@@ -32,6 +32,8 @@
- #include <setupapi.h>
- #include <shellscalingapi.h>
- 
-+#include "vxkex.h"
-+
- QT_BEGIN_NAMESPACE
- 
- using namespace Qt::StringLiterals;
-@@ -45,7 +47,15 @@ static inline QDpi monitorDPI(HMONITOR hMonitor)
+@@ -45,7 +45,7 @@ static inline QDpi monitorDPI(HMONITOR hMonitor)
  {
      UINT dpiX;
      UINT dpiY;
 -    if (SUCCEEDED(GetDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)))
-+
-+    HRESULT hr = S_OK;
-+
-+    if (QWindowsContext::shcoredll.isValid())
-+        hr = QWindowsContext::shcoredll.getDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-+    else
-+        hr = vxkex::GetDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-+
-+    if (SUCCEEDED(hr))
++    if (QWindowsContext::shcoredll.getDpiForMonitor && SUCCEEDED(QWindowsContext::shcoredll.getDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)))
          return QDpi(dpiX, dpiY);
      return {0, 0};
  }
-@@ -614,7 +624,10 @@ bool QWindowsScreen::setOrientationPreference(Qt::ScreenOrientation o)
+@@ -609,7 +609,8 @@ bool QWindowsScreen::setOrientationPreference(Qt::ScreenOrientation o)
          orientationPreference = ORIENTATION_PREFERENCE_LANDSCAPE_FLIPPED;
          break;
      }
 -    result = SetDisplayAutoRotationPreferences(orientationPreference);
 +    if (QWindowsContext::user32dll.setDisplayAutoRotationPreferences)
 +        result = QWindowsContext::user32dll.setDisplayAutoRotationPreferences(orientationPreference);
-+    else
-+        result = vxkex::SetDisplayAutoRotationPreferences(orientationPreference);
      return result;
  }
  
-@@ -622,7 +635,15 @@ Qt::ScreenOrientation QWindowsScreen::orientationPreference()
+@@ -617,7 +618,7 @@ Qt::ScreenOrientation QWindowsScreen::orientationPreference()
  {
      Qt::ScreenOrientation result = Qt::PrimaryOrientation;
      ORIENTATION_PREFERENCE orientationPreference = ORIENTATION_PREFERENCE_NONE;
 -    if (GetDisplayAutoRotationPreferences(&orientationPreference)) {
-+
-+    BOOL bResult = TRUE;
-+    
-+    if (QWindowsContext::user32dll.getDisplayAutoRotationPreferences)
-+        bResult = QWindowsContext::user32dll.getDisplayAutoRotationPreferences((DWORD *)&orientationPreference);
-+    else
-+        bResult = vxkex::GetDisplayAutoRotationPreferences(&orientationPreference);
-+
-+    if (bResult) {
++    if (QWindowsContext::user32dll.getDisplayAutoRotationPreferences && QWindowsContext::user32dll.getDisplayAutoRotationPreferences(&orientationPreference)) {
          switch (orientationPreference) {
          case ORIENTATION_PREFERENCE_NONE:
              break;
 diff --git a/src/plugins/platforms/windows/qwindowstheme.cpp b/src/plugins/platforms/windows/qwindowstheme.cpp
-index 66043d1b..c234989c 100644
+index 9059f592..12ae5be6 100644
 --- a/src/plugins/platforms/windows/qwindowstheme.cpp
 +++ b/src/plugins/platforms/windows/qwindowstheme.cpp
-@@ -45,6 +45,8 @@
+@@ -18,6 +18,7 @@
+ #include <objbase.h>
+ #include <commoncontrols.h>
+ #include <shellapi.h>
++#include <versionhelpers.h>
  
- #include <algorithm>
- 
-+#include "vxkex.h"
-+
- #if QT_CONFIG(cpp_winrt)
- #   include <QtCore/private/qt_winrtbase_p.h>
- 
-@@ -103,46 +105,60 @@ static inline QColor getSysColor(int index)
+ #include <QtCore/qapplicationstatic.h>
+ #include <QtCore/qvariant.h>
+@@ -103,18 +104,55 @@ static inline QColor getSysColor(int index)
  
  [[maybe_unused]] [[nodiscard]] static inline QColor qt_accentColor(AccentColorLevel level)
  {
@@ -1519,7 +2212,6 @@ index 66043d1b..c234989c 100644
 +    QColor accentDark;
 +    QColor accentDarker;
 +    QColor accentDarkest;
-+
  #if QT_CONFIG(cpp_winrt)
 -    using namespace winrt::Windows::UI::ViewManagement;
 -    const auto settings = UISettings();
@@ -1530,26 +2222,7 @@ index 66043d1b..c234989c 100644
 -    const QColor accentDark = getSysColor(settings.GetColorValue(UIColorType::AccentDark1));
 -    const QColor accentDarker = getSysColor(settings.GetColorValue(UIColorType::AccentDark2));
 -    const QColor accentDarkest = getSysColor(settings.GetColorValue(UIColorType::AccentDark3));
--#else
--    const QColor accent = []()->QColor {
--        // MS uses the aquatic contrast theme as an example in the URL below:
--        // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor#windows-1011-system-colors
--        if (QWindowsTheme::queryHighContrast())
--            return getSysColor(COLOR_HIGHLIGHT);
--        const QWinRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
--        if (!registry.isValid())
--            return {};
--        const QVariant value = registry.value(L"AccentColor");
--        if (!value.isValid())
--            return {};
--        // The retrieved value is in the #AABBGGRR format, we need to
--        // convert it to the #AARRGGBB format which Qt expects.
--        const QColor abgr = QColor::fromRgba(qvariant_cast<DWORD>(value));
--        if (!abgr.isValid())
--            return {};
--        return QColor::fromRgb(abgr.blue(), abgr.green(), abgr.red(), abgr.alpha());
-+    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows10)
-+    {
++    if (IsWindows10OrGreater()) {
 +        using namespace winrt::Windows::UI::ViewManagement;
 +        const auto settings = UISettings();
 +        accent = getSysColor(settings.GetColorValue(UIColorType::Accent));
@@ -1559,22 +2232,8 @@ index 66043d1b..c234989c 100644
 +        accentDark = getSysColor(settings.GetColorValue(UIColorType::AccentDark1));
 +        accentDarker = getSysColor(settings.GetColorValue(UIColorType::AccentDark2));
 +        accentDarkest = getSysColor(settings.GetColorValue(UIColorType::AccentDark3));
-+    }
-+#endif
- 
--    }();
-     if (!accent.isValid())
--        return {};
--
--    const QColor accentLight = accent.lighter(120);
--    const QColor accentLighter = accentLight.lighter(120);
--    const QColor accentLightest = accentLighter.lighter(120);
--    const QColor accentDark = accent.darker(120);
--    const QColor accentDarker = accentDark.darker(120);
--    const QColor accentDarkest = accentDarker.darker(120);
--#endif
-+    {
-+        const QColor accentFromRegistry = []()->QColor {
++   } else {
++       accent = []()->QColor {
 +            // MS uses the aquatic contrast theme as an example in the URL below:
 +            // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor#windows-1011-system-colors
 +            if (QWindowsTheme::queryHighContrast())
@@ -1592,289 +2251,168 @@ index 66043d1b..c234989c 100644
 +                return {};
 +            return QColor::fromRgb(abgr.blue(), abgr.green(), abgr.red(), abgr.alpha());
 +        }();
-+        if (!accentFromRegistry.isValid())
++        if (!accent.isValid())
 +            return {};
-+        accent = accentFromRegistry;
++
 +        accentLight = accent.lighter(120);
 +        accentLighter = accentLight.lighter(120);
 +        accentLightest = accentLighter.lighter(120);
 +        accentDark = accent.darker(120);
 +        accentDarker = accentDark.darker(120);
 +        accentDarkest = accentDarker.darker(120);
-+    }
-+
++   }
+ #else
+-    const QColor accent = []()->QColor {
++    accent = []()->QColor {
+         // MS uses the aquatic contrast theme as an example in the URL below:
+         // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor#windows-1011-system-colors
+         if (QWindowsTheme::queryHighContrast())
+@@ -136,12 +174,12 @@ static inline QColor getSysColor(int index)
+     if (!accent.isValid())
+         return {};
+ 
+-    const QColor accentLight = accent.lighter(120);
+-    const QColor accentLighter = accentLight.lighter(120);
+-    const QColor accentLightest = accentLighter.lighter(120);
+-    const QColor accentDark = accent.darker(120);
+-    const QColor accentDarker = accentDark.darker(120);
+-    const QColor accentDarkest = accentDarker.darker(120);
++    accentLight = accent.lighter(120);
++    accentLighter = accentLight.lighter(120);
++    accentLightest = accentLighter.lighter(120);
++    accentDark = accent.darker(120);
++    accentDarker = accentDark.darker(120);
++    accentDarkest = accentDarker.darker(120);
+ #endif
      switch (level) {
      case AccentColorDarkest:
-         return accentDarkest;
-@@ -164,6 +180,7 @@ static inline QColor getSysColor(int index)
- // QTBUG-48823/Windows 10: SHGetFileInfo() (as called by item views on file system
- // models has been observed to trigger a WM_PAINT on the mainwindow. Suppress the
- // behavior by running it in a thread.
-+
- class QShGetFileInfoThread : public QThread
- {
- public:
-@@ -342,46 +359,45 @@ void QWindowsTheme::populateLightSystemBasePalette(QPalette &result)
+@@ -309,7 +347,10 @@ void QWindowsTheme::populateLightSystemBasePalette(QPalette &result)
+     const QColor btnFace = background;
+     const QColor btnHighlight = getSysColor(COLOR_BTNHIGHLIGHT);
  
- void QWindowsTheme::populateDarkSystemBasePalette(QPalette &result)
- {
--    QColor foreground, background,
--           accent, accentDark, accentDarker, accentDarkest,
--           accentLight, accentLighter, accentLightest;
-+    QColor foreground = Qt::white;
-+    QColor background = QColor(0x1E, 0x1E, 0x1E);
-+    QColor accent = qt_accentColor(AccentColorNormal);
-+    QColor accentDark = accent.darker(120);
-+    QColor accentDarker = accentDark.darker(120);
-+    QColor accentDarkest = accentDarker.darker(120);
-+    QColor accentLight = accent.lighter(120);
-+    QColor accentLighter = accentLight.lighter(120);
-+    QColor accentLightest = accentLighter.lighter(120);
-+
- #if QT_CONFIG(cpp_winrt)
--    using namespace winrt::Windows::UI::ViewManagement;
--    const auto settings = UISettings();
--
--    // We have to craft a palette from these colors. The settings.UIElementColor(UIElementType) API
--    // returns the old system colors, not the dark mode colors. If the background is black (which it
--    // usually), then override it with a dark gray instead so that we can go up and down the lightness.
--    if (QWindowsTheme::queryColorScheme() == Qt::ColorScheme::Dark) {
--        // the system is actually running in dark mode, so UISettings will give us dark colors
--        foreground = getSysColor(settings.GetColorValue(UIColorType::Foreground));
--        background = [&settings]() -> QColor {
--            auto systemBackground = getSysColor(settings.GetColorValue(UIColorType::Background));
--            if (systemBackground == Qt::black)
--                systemBackground = QColor(0x1E, 0x1E, 0x1E);
--            return systemBackground;
--        }();
--        accent = qt_accentColor(AccentColorNormal);
--        accentDark = qt_accentColor(AccentColorDark);
--        accentDarker = qt_accentColor(AccentColorDarker);
--        accentDarkest = qt_accentColor(AccentColorDarkest);
--        accentLight = qt_accentColor(AccentColorLight);
--        accentLighter = qt_accentColor(AccentColorLighter);
--        accentLightest = qt_accentColor(AccentColorLightest);
--    } else
--#endif
+-    result.setColor(QPalette::Highlight, accent);
 +    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows10)
-     {
--        // If the system is running in light mode, then we need to make up our own dark palette
--        foreground = Qt::white;
--        background = QColor(0x1E, 0x1E, 0x1E);
--        accent = qt_accentColor(AccentColorNormal);
--        accentDark = accent.darker(120);
--        accentDarker = accentDark.darker(120);
--        accentDarkest = accentDarker.darker(120);
--        accentLight = accent.lighter(120);
--        accentLighter = accentLight.lighter(120);
--        accentLightest = accentLighter.lighter(120);
-+        using namespace winrt::Windows::UI::ViewManagement;
-+        const auto settings = UISettings();
-+
-+        // We have to craft a palette from these colors. The settings.UIElementColor(UIElementType) API
-+        // returns the old system colors, not the dark mode colors. If the background is black (which it
-+        // usually), then override it with a dark gray instead so that we can go up and down the lightness.
-+        if (QWindowsTheme::queryColorScheme() == Qt::ColorScheme::Dark) {
-+            // the system is actually running in dark mode, so UISettings will give us dark colors
-+            foreground = getSysColor(settings.GetColorValue(UIColorType::Foreground));
-+            background = [&settings]() -> QColor {
-+                auto systemBackground = getSysColor(settings.GetColorValue(UIColorType::Background));
-+                if (systemBackground == Qt::black)
-+                    systemBackground = QColor(0x1E, 0x1E, 0x1E);
-+                return systemBackground;
-+            }();
-+            accent = qt_accentColor(AccentColorNormal);
-+            accentDark = qt_accentColor(AccentColorDark);
-+            accentDarker = qt_accentColor(AccentColorDarker);
-+            accentDarkest = qt_accentColor(AccentColorDarkest);
-+            accentLight = qt_accentColor(AccentColorLight);
-+            accentLighter = qt_accentColor(AccentColorLighter);
-+            accentLightest = qt_accentColor(AccentColorLightest);
-+        }
-     }
-+#endif
-+
-     const QColor linkColor = accentLightest;
-     const QColor buttonColor = background.lighter(200);
- 
-@@ -824,7 +840,10 @@ void QWindowsTheme::refreshFonts()
++        result.setColor(QPalette::Highlight, accent);
++    else
++        result.setColor(QPalette::Highlight, getSysColor(COLOR_HIGHLIGHT));
+     result.setColor(QPalette::WindowText, getSysColor(COLOR_WINDOWTEXT));
+     result.setColor(QPalette::Button, btnFace);
+     result.setColor(QPalette::Light, btnHighlight);
+@@ -821,7 +862,10 @@ void QWindowsTheme::refreshFonts()
      fixedFont.setStyleHint(QFont::TypeWriter);
  
      LOGFONT lfIconTitleFont;
 -    SystemParametersInfoForDpi(SPI_GETICONTITLELOGFONT, sizeof(lfIconTitleFont), &lfIconTitleFont, 0, dpi);
 +    if (QWindowsContext::user32dll.systemParametersInfoForDpi)
-+        QWindowsContext::user32dll.systemParametersInfoForDpi(SPI_GETICONTITLELOGFONT, sizeof(lfIconTitleFont), &lfIconTitleFont, 0, dpi);
++        QWindowsContext::user32dll.systemParametersInfoForDpi(SPI_GETICONTITLELOGFONT, sizeof(lfIconTitleFont), &lfIconTitleFont, 0, dpi);        
 +    else
-+        vxkex::SystemParametersInfoForDpi(SPI_GETICONTITLELOGFONT, sizeof(lfIconTitleFont), &lfIconTitleFont, 0, dpi);
++        SystemParametersInfoW(SPI_GETICONTITLELOGFONT, sizeof(lfIconTitleFont), &lfIconTitleFont, 0); 
      const QFont iconTitleFont = QWindowsFontDatabase::LOGFONT_to_QFont(lfIconTitleFont, dpi);
  
      m_fonts[SystemFont] = new QFont(QWindowsFontDatabase::systemDefaultFont());
-@@ -1081,6 +1100,7 @@ public:
- static QPixmap pixmapFromShellImageList(int iImageList, int iIcon)
- {
-     QPixmap result;
-+
-     // For MinGW:
-     static const IID iID_IImageList = {0x46eb5926, 0x582e, 0x4017, {0x9f, 0xdf, 0xe8, 0x99, 0x8d, 0xaa, 0x9, 0x50}};
- 
-@@ -1095,6 +1115,7 @@ static QPixmap pixmapFromShellImageList(int iImageList, int iIcon)
-         DestroyIcon(hIcon);
-     }
-     imageList->Release();
-+
-     return result;
- }
- 
 diff --git a/src/plugins/platforms/windows/qwindowswindow.cpp b/src/plugins/platforms/windows/qwindowswindow.cpp
-index 0ef91ba6..6a855a17 100644
+index 731673b6..bf6840cf 100644
 --- a/src/plugins/platforms/windows/qwindowswindow.cpp
 +++ b/src/plugins/platforms/windows/qwindowswindow.cpp
-@@ -51,6 +51,8 @@
- 
- #include <shellscalingapi.h>
- 
-+#include "vxkex.h"
-+
- #include <private/qdxgivsyncservice_p.h>
- 
- #ifndef GWL_HWNDPARENT
-@@ -523,11 +525,15 @@ static void setWindowOpacity(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, bo
- 
- [[nodiscard]] static inline int getResizeBorderThickness(const UINT dpi)
- {
--    // The width of the padded border will always be 0 if DWM composition is
--    // disabled, but since it will always be enabled and can't be programtically
--    // disabled from Windows 8, we are safe to go.
+@@ -525,8 +525,12 @@ static void setWindowOpacity(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, bo
+     // The width of the padded border will always be 0 if DWM composition is
+     // disabled, but since it will always be enabled and can't be programtically
+     // disabled from Windows 8, we are safe to go.
 -    return GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi)
 -           + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-+    if (QWindowsContext::user32dll.getSystemMetricsForDpi) {
-+        // The width of the padded border will always be 0 if DWM composition is
-+        // disabled, but since it will always be enabled and can't be programtically
-+        // disabled from Windows 8, we are safe to go.
++    if (QWindowsContext::user32dll.getSystemMetricsForDpi)
 +        return QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CXSIZEFRAME, dpi)
-+               + QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-+    }
++           + QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
 +    else
-+        return vxkex::GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + vxkex::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
++        // dpi is ignored
++        return GetSystemMetrics(SM_CXSIZEFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
  }
  
  /*!
-@@ -539,11 +545,21 @@ static QMargins invisibleMargins(QPoint screenPoint)
- {
-     POINT pt = {screenPoint.x(), screenPoint.y()};
+@@ -540,9 +544,12 @@ static QMargins invisibleMargins(QPoint screenPoint)
      if (HMONITOR hMonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL)) {
--        UINT dpiX;
--        UINT dpiY;
+         UINT dpiX;
+         UINT dpiY;
 -        if (SUCCEEDED(GetDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY))) {
--            const int gap = getResizeBorderThickness(dpiX);
--            return QMargins(gap, 0, gap, gap);
-+        if (QWindowsContext::shcoredll.isValid()) {
-+            UINT dpiX;
-+            UINT dpiY;
-+
-+            HRESULT hr = S_OK;
-+
-+            if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows10)
-+                hr = QWindowsContext::shcoredll.getDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-+            else
-+                hr = vxkex::GetDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-+
-+            if (SUCCEEDED(hr)) {
-+                const int gap = getResizeBorderThickness(dpiX);
-+                return QMargins(gap, 0, gap, gap);
-+            }
++        if (QWindowsContext::shcoredll.getDpiForMonitor && SUCCEEDED(QWindowsContext::shcoredll.getDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY))) {
+             const int gap = getResizeBorderThickness(dpiX);
+             return QMargins(gap, 0, gap, gap);
++        } else {
++            const int gap = getResizeBorderThickness(GetDeviceCaps(GetDC(NULL), LOGPIXELSX));
++            return QMargins(gap, 0, gap, gap);
          }
      }
      return QMargins();
-@@ -551,7 +567,8 @@ static QMargins invisibleMargins(QPoint screenPoint)
+@@ -550,7 +557,7 @@ static QMargins invisibleMargins(QPoint screenPoint)
  
  [[nodiscard]] static inline QMargins invisibleMargins(const HWND hwnd)
  {
 -    const UINT dpi = GetDpiForWindow(hwnd);
-+    const UINT dpi = (QWindowsContext::user32dll.getDpiForWindow) ? QWindowsContext::user32dll.getDpiForWindow(hwnd) : vxkex::GetDpiForWindow(hwnd);
-+
++    const UINT dpi = QWindowsContext::user32dll.getDpiForWindow ? QWindowsContext::user32dll.getDpiForWindow(hwnd) : GetDeviceCaps(GetDC(NULL), LOGPIXELSX);
      const int gap = getResizeBorderThickness(dpi);
      return QMargins(gap, 0, gap, gap);
  }
-@@ -856,7 +873,7 @@ static inline bool shouldApplyDarkFrame(const QWindow *w)
+@@ -871,7 +878,7 @@ static inline int getTitleBarHeight_sys(const UINT dpi)
  {
-     if (!w->isTopLevel() || w->flags().testFlag(Qt::FramelessWindowHint))
-         return false;
--
-+    
-     // the user of the application has explicitly opted out of dark frames
-     if (!QWindowsIntegration::instance()->darkModeHandling().testFlag(QWindowsApplication::DarkModeWindowFrames))
-         return false;
-@@ -1106,9 +1123,17 @@ QMargins QWindowsGeometryHint::frame(const QWindow *w, DWORD style, DWORD exStyl
+     // According to MS design manual, it should be 32px when DPI is 96.
+     return getResizeBorderThickness(dpi) +
+-           ::GetSystemMetricsForDpi(SM_CYCAPTION, dpi);
++           (QWindowsContext::user32dll.getSystemMetricsForDpi ? ::QWindowsContext::user32dll.getSystemMetricsForDpi(SM_CYCAPTION, dpi) : GetSystemMetrics(SM_CYCAPTION));
+ }
+ 
+ QWindowsWindowData
+@@ -936,7 +943,7 @@ QWindowsWindowData
+                                  context->frameWidth, context->frameHeight,
+                                  parentHandle, nullptr, appinst, nullptr);
+ 
+-    const UINT dpi = ::GetDpiForWindow(result.hwnd);
++    const UINT dpi = QWindowsContext::user32dll.getDpiForWindow ? QWindowsContext::user32dll.getDpiForWindow(result.hwnd) : GetDeviceCaps(GetDC(NULL), LOGPIXELSX);
+     const int titleBarHeight = getTitleBarHeight_sys(dpi);
+     result.hwndTitlebar = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
+                                          classTitleBarNameUtf16, classTitleBarNameUtf16,
+@@ -1104,7 +1111,7 @@ QMargins QWindowsGeometryHint::frame(const QWindow *w, DWORD style, DWORD exStyl
          return {};
      RECT rect = {0,0,0,0};
      style &= ~DWORD(WS_OVERLAPPED); // Not permitted, see docs.
 -    if (AdjustWindowRectExForDpi(&rect, style, FALSE, exStyle, unsigned(qRound(dpi))) == FALSE) {
--        qErrnoWarning("%s: AdjustWindowRectExForDpi failed", __FUNCTION__);
-+    if (QWindowsContext::user32dll.adjustWindowRectExForDpi)
-+    {
-+        if (QWindowsContext::user32dll.adjustWindowRectExForDpi(&rect, style, FALSE, exStyle, unsigned(qRound(dpi))) == FALSE) 
-+            qErrnoWarning("%s: AdjustWindowRectExForDpi failed", __FUNCTION__);
++    if (!QWindowsContext::user32dll.adjustWindowRectExForDpi || (QWindowsContext::user32dll.adjustWindowRectExForDpi(&rect, style, FALSE, exStyle, unsigned(qRound(dpi))) == FALSE)) {
+         qErrnoWarning("%s: AdjustWindowRectExForDpi failed", __FUNCTION__);
      }
-+    else
-+    {
-+        if (vxkex::AdjustWindowRectExForDpi(&rect, style, FALSE, exStyle, unsigned(qRound(dpi))) == FALSE) 
-+            qErrnoWarning("%s: vxkex::AdjustWindowRectExForDpi failed", __FUNCTION__);
-+    }
-+
      const QMargins result(qAbs(rect.left), qAbs(rect.top),
-                           qAbs(rect.right), qAbs(rect.bottom));
-     qCDebug(lcQpaWindow).nospace() << __FUNCTION__ << " style="
-@@ -1456,7 +1481,7 @@ void QWindowsForeignWindow::setParent(const QPlatformWindow *newParentWindow)
-     qCDebug(lcQpaWindow) << __FUNCTION__ << window() << "newParent="
-         << newParentWindow << newParent << "oldStyle=" << debugWinStyle(oldStyle);
- 
--    auto updateWindowFlags = [&] {
-+    auto updateWindowFlags = [&]{
-         // Top level window flags need to be set/cleared manually.
-         DWORD newStyle = oldStyle;
-         if (isTopLevel) {
-@@ -1672,7 +1697,8 @@ void QWindowsWindow::initialize()
+@@ -1670,7 +1677,10 @@ void QWindowsWindow::initialize()
              QWindowSystemInterface::handleGeometryChange<QWindowSystemInterface::SynchronousDelivery>(w, obtainedGeometry);
          }
      }
 -    QWindowsWindow::setSavedDpi(GetDpiForWindow(handle()));
-+    QWindowsWindow::setSavedDpi(QWindowsContext::user32dll.getDpiForWindow ?
-+        QWindowsContext::user32dll.getDpiForWindow(handle()) : vxkex::GetDpiForWindow(handle()));
++    if (QWindowsContext::user32dll.getDpiForWindow)
++        QWindowsWindow::setSavedDpi(QWindowsContext::user32dll.getDpiForWindow(handle()));
++    else
++        QWindowsWindow::setSavedDpi(GetDeviceCaps(GetDC(NULL), LOGPIXELSX));
  }
  
  QSurfaceFormat QWindowsWindow::format() const
-@@ -2164,7 +2190,7 @@ void QWindowsWindow::handleDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam)
+@@ -2160,7 +2170,7 @@ void QWindowsWindow::handleDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam)
  
  void QWindowsWindow::handleDpiChangedAfterParent(HWND hwnd)
  {
 -    const UINT dpi = GetDpiForWindow(hwnd);
-+    const UINT dpi = QWindowsContext::user32dll.getDpiForWindow ? QWindowsContext::user32dll.getDpiForWindow(hwnd) : vxkex::GetDpiForWindow(hwnd);
++    const UINT dpi = QWindowsContext::user32dll.getDpiForWindow ? QWindowsContext::user32dll.getDpiForWindow(hwnd) : GetDeviceCaps(GetDC(NULL), LOGPIXELSX);
      const qreal scale = dpiRelativeScale(dpi);
      setSavedDpi(dpi);
  
-@@ -2268,6 +2294,7 @@ void QWindowsWindow::setGeometry(const QRect &rectIn)
-     }
-     if (m_windowState & Qt::WindowMinimized)
-         m_data.geometry = rect; // Otherwise set by handleGeometryChange() triggered by event.
-+
-     if (m_data.hwnd) {
-         // A ResizeEvent with resulting geometry will be sent. If we cannot
-         // achieve that size (for example, window title minimal constraint),
 diff --git a/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp b/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp
-index 7a9454b2..f0e40d8f 100644
+index 638d684c..cc3f66d8 100644
 --- a/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp
 +++ b/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp
-@@ -15,6 +15,8 @@
- #include <QtGui/private/qguiapplication_p.h>
- #include <QtCore/qt_windows.h>
- #include <qpa/qplatformintegration.h>
+@@ -8,6 +8,7 @@
+ #include "qwindowsuiautomation.h"
+ #include "qwindowsuiamainprovider.h"
+ #include "qwindowsuiautils.h"
 +#include "qwindowsuiawrapper_p.h"
-+#include "qwindowsuiawrapper.cpp"
  
- #include <QtCore/private/qwinregistry_p.h>
- 
-@@ -47,7 +49,7 @@ bool QWindowsUiaAccessibility::handleWmGetObject(HWND hwnd, WPARAM wParam, LPARA
+ #include <QtGui/qaccessible.h>
+ #include <QtGui/qwindow.h>
+@@ -47,7 +48,7 @@ bool QWindowsUiaAccessibility::handleWmGetObject(HWND hwnd, WPARAM wParam, LPARA
      if (QWindow *window = QWindowsContext::instance()->findWindow(hwnd)) {
          if (QAccessibleInterface *accessible = window->accessibleRoot()) {
              auto provider = QWindowsUiaMainProvider::providerForAccessible(accessible);
@@ -1883,14 +2421,15 @@ index 7a9454b2..f0e40d8f 100644
              return true;
          }
      }
-@@ -122,8 +124,12 @@ void QWindowsUiaAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *event
+@@ -121,9 +122,13 @@ void QWindowsUiaAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *event
+     QAccessibleInterface *accessible = event->accessibleInterface();
      if (!isActive() || !accessible || !accessible->isValid())
          return;
- 
++        
 +    // Ensures QWindowsUiaWrapper is properly initialized.
 +    if (!QWindowsUiaWrapper::instance()->ready())
 +        return;
-+
+ 
      // No need to do anything when nobody is listening.
 -    if (!UiaClientsAreListening())
 +    if (!QWindowsUiaWrapper::instance()->clientsAreListening())
@@ -1898,7 +2437,7 @@ index 7a9454b2..f0e40d8f 100644
  
      switch (event->type()) {
 diff --git a/src/plugins/platforms/windows/uiautomation/qwindowsuiamainprovider.cpp b/src/plugins/platforms/windows/uiautomation/qwindowsuiamainprovider.cpp
-index c3fe9c20..4a08abf9 100644
+index 6a3bbce9..89b9c348 100644
 --- a/src/plugins/platforms/windows/uiautomation/qwindowsuiamainprovider.cpp
 +++ b/src/plugins/platforms/windows/uiautomation/qwindowsuiamainprovider.cpp
 @@ -21,6 +21,7 @@
@@ -2000,32 +2539,16 @@ index c3fe9c20..4a08abf9 100644
                  }
              }
          }
-@@ -212,23 +213,8 @@ void QWindowsUiaMainProvider::raiseNotification(QAccessibleAnnouncementEvent *ev
-                     ? NotificationProcessing_ImportantAll
+@@ -213,7 +214,7 @@ void QWindowsUiaMainProvider::raiseNotification(QAccessibleAnnouncementEvent *ev
                      : NotificationProcessing_All;
              QBStr activityId{ QString::fromLatin1("") };
--#if !defined(Q_CC_MSVC) || !defined(QT_WIN_SERVER_2016_COMPAT)
+ #if !defined(Q_CC_MSVC) || !defined(QT_WIN_SERVER_2016_COMPAT)
 -            UiaRaiseNotificationEvent(provider.Get(), NotificationKind_Other, processing, message.bstr(),
 +            QWindowsUiaWrapper::instance()->raiseNotificationEvent(provider.Get(), NotificationKind_Other, processing, message.bstr(),
                                        activityId.bstr());
--#else
--            HMODULE uiautomationcore = GetModuleHandleW(L"UIAutomationCore.dll");
--            if (uiautomationcore != NULL) {
--                typedef HRESULT (WINAPI *EVENTFUNC)(IRawElementProviderSimple *, NotificationKind,
--                                                    NotificationProcessing, BSTR, BSTR);
--
--                EVENTFUNC uiaRaiseNotificationEvent =
--                    (EVENTFUNC)GetProcAddress(uiautomationcore, "UiaRaiseNotificationEvent");
--                if (uiaRaiseNotificationEvent != NULL) {
--                    uiaRaiseNotificationEvent(provider.Get(), NotificationKind_Other, processing,
--                                              message.bstr(), activityId.bstr());
--                }
--            }
--#endif
-         }
-     }
- }
-@@ -679,7 +665,7 @@ HRESULT QWindowsUiaMainProvider::get_HostRawElementProvider(IRawElementProviderS
+ #else
+             HMODULE uiautomationcore = GetModuleHandleW(L"UIAutomationCore.dll");
+@@ -674,7 +675,7 @@ HRESULT QWindowsUiaMainProvider::get_HostRawElementProvider(IRawElementProviderS
      // Returns a host provider only for controls associated with a native window handle. Others should return NULL.
      if (QAccessibleInterface *accessible = accessibleInterface()) {
          if (HWND hwnd = hwndForAccessible(accessible)) {
@@ -2034,19 +2557,34 @@ index c3fe9c20..4a08abf9 100644
          }
      }
      return S_OK;
-diff --git a/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper.cpp b/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper.cpp
+diff --git a/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper_p.cpp b/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper_p.cpp
 new file mode 100644
-index 00000000..caeb8e1d
+index 00000000..263f80c1
 --- /dev/null
-+++ b/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper.cpp
-@@ -0,0 +1,89 @@
++++ b/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper_p.cpp
+@@ -0,0 +1,105 @@
 +// Copyright (C) 2017 The Qt Company Ltd.
 +// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 +
-+#include <initguid.h>
++#include <QtGui/qtguiglobal.h>
++#if QT_CONFIG(accessibility)
 +
 +#include "qwindowsuiawrapper_p.h"
++
 +#include <QtCore/private/qsystemlibrary_p.h>
++
++#include <initguid.h>
++
++//
++//  W A R N I N G
++//  -------------
++//
++// This file is not part of the Qt API.  It exists for the convenience
++// of other Qt classes.  This header file may change from version to
++// version without notice, or even be removed.
++//
++// We mean it.
++//
 +
 +QT_BEGIN_NAMESPACE
 +
@@ -2129,12 +2667,13 @@ index 00000000..caeb8e1d
 +
 +QT_END_NAMESPACE
 +
++#endif // QT_CONFIG(accessibility)
 diff --git a/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper_p.h b/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper_p.h
 new file mode 100644
-index 00000000..e0053181
+index 00000000..3b3e7cd2
 --- /dev/null
 +++ b/src/plugins/platforms/windows/uiautomation/qwindowsuiawrapper_p.h
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,62 @@
 +// Copyright (C) 2017 The Qt Company Ltd.
 +// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
 +
@@ -2152,9 +2691,12 @@ index 00000000..e0053181
 +// We mean it.
 +//
 +
-+#include <QtGui/private/qtguiglobal_p.h>
++#include <QtGui/qtguiglobal.h>
++#if QT_CONFIG(accessibility)
++#include <QtCore/qt_windows.h>
++#include "qwindowscontext.h"
 +
-+QT_REQUIRE_CONFIG(accessibility);
++#include <uiautomation.h>
 +
 +QT_BEGIN_NAMESPACE
 +
@@ -2190,456 +2732,65 @@ index 00000000..e0053181
 +
 +QT_END_NAMESPACE
 +
++#endif // QT_CONFIG(accessibility)
++
 +#endif //QWINDOWSUIAWRAPPER_H
 +
-diff --git a/src/plugins/platforms/windows/vxkex.h b/src/plugins/platforms/windows/vxkex.h
-new file mode 100644
-index 00000000..6bbf2209
---- /dev/null
-+++ b/src/plugins/platforms/windows/vxkex.h
-@@ -0,0 +1,426 @@
-+#pragma once
-+
-+#include <shtypes.h>
-+#include <winuser.h>
-+#include <windef.h>
-+#include <shellscalingapi.h>
-+
-+#define MDT_MAXIMUM_DPI 3
-+
-+namespace vxkex {
-+
-+static INT GetSystemMetricsForDpi(
-+    IN  INT     Index,
-+    IN  UINT    Dpi)
+diff --git a/src/plugins/styles/modernwindows/qwindowsvistastyle.cpp b/src/plugins/styles/modernwindows/qwindowsvistastyle.cpp
+index 1c3d3987..b19b35ea 100644
+--- a/src/plugins/styles/modernwindows/qwindowsvistastyle.cpp
++++ b/src/plugins/styles/modernwindows/qwindowsvistastyle.cpp
+@@ -3260,6 +3260,22 @@ void QWindowsVistaStyle::drawControl(ControlElement element, const QStyleOption
+     d->drawBackground(theme);
+ }
+ 
++QRect QWindowsVistaStylePrivate::scrollBarGripperBounds(QStyle::State flags, const QWidget *widget, QWindowsThemeData *theme)
 +{
-+    INT Value;
++    const bool horizontal = flags & QStyle::State_Horizontal;
++    const qreal factor = QWindowsStylePrivate::nativeMetricScaleFactor(widget);
++    const QMargins contentsMargin =
++        (theme->margins(theme->rect, TMT_SIZINGMARGINS) * factor).toMargins();
++    theme->partId = horizontal ? SBP_GRIPPERHORZ : SBP_GRIPPERVERT;
++    const QSize size = (theme->size() * factor).toSize();
 +
-+    Value = GetSystemMetrics(Index);
-+
-+    switch (Index) {
-+    case SM_CXVSCROLL:
-+    case SM_CYHSCROLL:
-+    case SM_CYCAPTION:
-+    case SM_CYVTHUMB:
-+    case SM_CXHTHUMB:
-+    case SM_CXICON:
-+    case SM_CYICON:
-+    case SM_CXCURSOR:
-+    case SM_CYCURSOR:
-+    case SM_CYMENU:
-+    case SM_CYVSCROLL:
-+    case SM_CXHSCROLL:
-+    case SM_CXMIN:
-+    case SM_CXMINTRACK:
-+    case SM_CYMIN:
-+    case SM_CYMINTRACK:
-+    case SM_CXSIZE:
-+    case SM_CXFRAME:
-+    case SM_CYFRAME:
-+    case SM_CXICONSPACING:
-+    case SM_CYICONSPACING:
-+    case SM_CXSMICON:
-+    case SM_CYSMICON:
-+    case SM_CYSMCAPTION:
-+    case SM_CXSMSIZE:
-+    case SM_CYSMSIZE:
-+    case SM_CXMENUSIZE:
-+    case SM_CYMENUSIZE:
-+    case SM_CXMENUCHECK:
-+    case SM_CYMENUCHECK:
-+        // These are pixel values that have to be scaled according to DPI.
-+        Value *= Dpi;
-+        Value /= USER_DEFAULT_SCREEN_DPI;
-+        break;
-+    }
-+
-+    return Value;
++    const int hSpace = theme->rect.width() - size.width();
++    const int vSpace = theme->rect.height() - size.height();
++    const bool sufficientSpace = (horizontal && hSpace > (contentsMargin.left() + contentsMargin.right()))
++        || vSpace > contentsMargin.top() + contentsMargin.bottom();
++    return sufficientSpace ? QRect(theme->rect.topLeft() + QPoint(hSpace, vSpace) / 2, size) : QRect();
 +}
 +
-+static BOOL SystemParametersInfoForDpi(
-+    IN      UINT    Action,
-+    IN      UINT    Parameter,
-+    IN OUT  PVOID   Data,
-+    IN      UINT    WinIni,
-+    IN      UINT    Dpi)
-+{
-+    switch (Action) {
-+    case SPI_GETICONTITLELOGFONT:
-+        return SystemParametersInfo(Action, Parameter, Data, 0);
-+    case SPI_GETICONMETRICS:
-+        {
-+            BOOL Success;
-+            PICONMETRICS IconMetrics;
-+
-+            Success = SystemParametersInfo(Action, Parameter, Data, 0);
-+
-+            if (Success) {
-+                IconMetrics = (PICONMETRICS) Data;
-+
-+                IconMetrics->iHorzSpacing *= Dpi;
-+                IconMetrics->iVertSpacing *= Dpi;
-+                IconMetrics->iHorzSpacing /= USER_DEFAULT_SCREEN_DPI;
-+                IconMetrics->iVertSpacing /= USER_DEFAULT_SCREEN_DPI;
-+            }
-+
-+            return Success;
-+        }
-+    case SPI_GETNONCLIENTMETRICS:
-+        {
-+            BOOL Success;
-+            PNONCLIENTMETRICS NonClientMetrics;
-+
-+            Success = SystemParametersInfo(Action, Parameter, Data, 0);
-+
-+            if (Success) {
-+                NonClientMetrics = (PNONCLIENTMETRICS) Data;
-+
-+                NonClientMetrics->iBorderWidth          *= Dpi;
-+                NonClientMetrics->iScrollWidth          *= Dpi;
-+                NonClientMetrics->iScrollHeight         *= Dpi;
-+                NonClientMetrics->iCaptionWidth         *= Dpi;
-+                NonClientMetrics->iCaptionHeight        *= Dpi;
-+                NonClientMetrics->iSmCaptionWidth       *= Dpi;
-+                NonClientMetrics->iSmCaptionHeight      *= Dpi;
-+                NonClientMetrics->iMenuWidth            *= Dpi;
-+                NonClientMetrics->iMenuHeight           *= Dpi;
-+                NonClientMetrics->iPaddedBorderWidth    *= Dpi;
-+
-+                NonClientMetrics->iBorderWidth          /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iScrollWidth          /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iScrollHeight         /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iCaptionWidth         /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iCaptionHeight        /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iSmCaptionWidth       /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iSmCaptionHeight      /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iMenuWidth            /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iMenuHeight           /= USER_DEFAULT_SCREEN_DPI;
-+                NonClientMetrics->iPaddedBorderWidth    /= USER_DEFAULT_SCREEN_DPI;
-+            }
-+
-+            return Success;
-+        }
-+    default:
-+        SetLastError(ERROR_INVALID_PARAMETER);
-+        return FALSE;
-+    }
-+}
-+
-+static HRESULT GetScaleFactorForMonitor(
-+    IN  HMONITOR                Monitor,
-+    OUT DEVICE_SCALE_FACTOR    *ScaleFactor)
-+{
-+    HDC DeviceContext;
-+    ULONG LogPixelsX;
-+
-+    DeviceContext = GetDC(NULL);
-+    if (!DeviceContext) {
-+        *ScaleFactor = SCALE_100_PERCENT;
-+        return S_OK;
-+    }
-+
-+    LogPixelsX = GetDeviceCaps(DeviceContext, LOGPIXELSX);
-+    ReleaseDC(NULL, DeviceContext);
-+
-+    *ScaleFactor = (DEVICE_SCALE_FACTOR) (9600 / LogPixelsX);
-+    return S_OK;
-+}
-+
-+static HRESULT GetDpiForMonitor(
-+    IN  HMONITOR            Monitor,
-+    IN  MONITOR_DPI_TYPE    DpiType,
-+    OUT UINT *              DpiX,
-+    OUT UINT *              DpiY)
-+{
-+    HDC DeviceContext;
-+
-+    if (DpiType >= MDT_MAXIMUM_DPI) {
-+        return E_INVALIDARG;
-+    }
-+
-+    if (!DpiX || !DpiY) {
-+        return E_INVALIDARG;
-+    }
-+
-+    if (!IsProcessDPIAware()) {
-+        *DpiX = USER_DEFAULT_SCREEN_DPI;
-+        *DpiY = USER_DEFAULT_SCREEN_DPI;
-+        return S_OK;
-+    }
-+
-+    DeviceContext = GetDC(NULL);
-+    if (!DeviceContext) {
-+        *DpiX = USER_DEFAULT_SCREEN_DPI;
-+        *DpiY = USER_DEFAULT_SCREEN_DPI;
-+        return S_OK;
-+    }
-+
-+    *DpiX = GetDeviceCaps(DeviceContext, LOGPIXELSX);
-+    *DpiY = GetDeviceCaps(DeviceContext, LOGPIXELSY);
-+
-+    if (DpiType == MDT_EFFECTIVE_DPI) {
-+        DEVICE_SCALE_FACTOR ScaleFactor;
-+
-+        // We have to multiply the DPI values by the scaling factor.
-+        vxkex::GetScaleFactorForMonitor(Monitor, &ScaleFactor);
-+
-+        *DpiX *= ScaleFactor;
-+        *DpiY *= ScaleFactor;
-+        *DpiX /= 100;
-+        *DpiY /= 100;
-+    }
-+
-+    ReleaseDC(NULL, DeviceContext);
-+    return S_OK;
-+}
-+
-+static UINT GetDpiForSystem(
-+    VOID)
-+{
-+    HDC DeviceContext;
-+    ULONG LogPixelsX;
-+
-+    if (!IsProcessDPIAware()) {
-+        return 96;
-+    }
-+
-+    DeviceContext = GetDC(NULL);
-+    if (!DeviceContext) {
-+        return 96;
-+    }
-+
-+    LogPixelsX = GetDeviceCaps(DeviceContext, LOGPIXELSX);
-+    ReleaseDC(NULL, DeviceContext);
-+
-+    return LogPixelsX;
-+}
-+
-+static UINT GetDpiForWindow(
-+    IN  HWND    Window)
-+{
-+    if (!IsWindow(Window)) {
-+        return 0;
-+    }
-+
-+    return vxkex::GetDpiForSystem();
-+}
-+
-+static BOOL AdjustWindowRectExForDpi(
-+    IN OUT  LPRECT  Rect,
-+    IN      ULONG   WindowStyle,
-+    IN      BOOL    HasMenu,
-+    IN      ULONG   WindowExStyle,
-+    IN      ULONG   Dpi)
-+{
-+    // I'm not sure how to implement this function properly.
-+    // If it turns out to be important, I'll have to do some testing
-+    // on a Win10 VM.
-+
-+    return AdjustWindowRectEx(
-+        Rect,
-+        WindowStyle,
-+        HasMenu,
-+        WindowExStyle);
-+}
-+
-+static BOOL SetDisplayAutoRotationPreferences(
-+    IN  ORIENTATION_PREFERENCE  Orientation)
-+{
-+    return TRUE;
-+}
-+
-+static BOOL GetDisplayAutoRotationPreferences(
-+    OUT ORIENTATION_PREFERENCE * Orientation)
-+{
-+    *Orientation = ORIENTATION_PREFERENCE_NONE;
-+    return TRUE;
-+}
-+
-+// scaling.c
-+
-+static BOOL SetProcessDpiAwarenessContext(
-+    IN  DPI_AWARENESS_CONTEXT   DpiContext)
-+{
-+    if ((ULONG_PTR)DpiContext == (ULONG_PTR)DPI_AWARENESS_CONTEXT_UNAWARE) {
-+        //NOTHING;
-+    } else if ((ULONG_PTR)DpiContext == (ULONG_PTR)DPI_AWARENESS_CONTEXT_SYSTEM_AWARE ||
-+             (ULONG_PTR)DpiContext == (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE ||
-+             (ULONG_PTR)DpiContext == (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) {
-+        SetProcessDPIAware();
-+    } else {
-+        return FALSE;
-+    }
-+
-+    return TRUE;
-+}
-+
-+static BOOL AreDpiAwarenessContextsEqual(
-+    IN  DPI_AWARENESS_CONTEXT   Value1,
-+    IN  DPI_AWARENESS_CONTEXT   Value2)
-+{
-+    return (Value1 == Value2);
-+}
-+
-+static BOOL IsValidDpiAwarenessContext(
-+    IN  DPI_AWARENESS_CONTEXT   Value)
-+{
-+    if ((ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_UNAWARE ||
-+        (ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED ||
-+        (ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_SYSTEM_AWARE ||
-+        (ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE ||
-+        (ULONG_PTR)Value == (ULONG_PTR)DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) {
-+        return TRUE;
-+    } else {
-+        return FALSE;
-+    }
-+}
-+
-+static BOOL EnableNonClientDpiScaling(
-+    IN  HWND    Window)
-+{
-+    return TRUE;
-+}
-+
-+static DPI_AWARENESS_CONTEXT GetThreadDpiAwarenessContext(
-+    VOID)
-+{
-+    if (IsProcessDPIAware()) {
-+        return DPI_AWARENESS_CONTEXT_SYSTEM_AWARE;
-+    } else {
-+        return DPI_AWARENESS_CONTEXT_UNAWARE;
-+    }
-+}
-+
-+static DPI_AWARENESS_CONTEXT GetWindowDpiAwarenessContext(
-+    IN  HWND    Window)
-+{
-+    ULONG WindowThreadId;
-+    ULONG WindowProcessId;
-+
-+    WindowThreadId = GetWindowThreadProcessId(Window, &WindowProcessId);
-+    if (!WindowThreadId) {
-+        return 0;
-+    }
-+
-+    // looks like there's a bug in vxkex, here should be == instead of =
-+    // and if is always true
-+    // anyway I don't want to deal with Windows kernel mode structures here
-+
-+    if (1) { //if (WindowProcessId = (ULONG) NtCurrentTeb()->ClientId.UniqueProcess) {
-+        return vxkex::GetThreadDpiAwarenessContext();
-+    }
-+
-+    return DPI_AWARENESS_CONTEXT_UNAWARE;
-+}
-+
-+// pointer.c
-+
-+static BOOL GetPointerType(
-+    IN  UINT32               PointerId,
-+    OUT POINTER_INPUT_TYPE  *PointerType)
-+{
-+    *PointerType = PT_MOUSE;
-+    return TRUE;
-+}
-+
-+static BOOL GetPointerFrameTouchInfo(
-+    IN      UINT32   PointerId,
-+    IN OUT  UINT32   *PointerCount,
-+    OUT     LPVOID  TouchInfo)
-+{
-+    return FALSE;
-+}
-+
-+static BOOL GetPointerFrameTouchInfoHistory(
-+    IN      UINT32   PointerId,
-+    IN OUT  UINT32   *EntriesCount,
-+    IN OUT  UINT32   *PointerCount,
-+    OUT     LPVOID   TouchInfo)
-+{
-+    return FALSE;
-+}
-+
-+static BOOL GetPointerPenInfo(
-+    IN  UINT32   PointerId,
-+    OUT LPVOID  PenInfo)
-+{
-+    return FALSE;
-+}
-+
-+static BOOL GetPointerPenInfoHistory(
-+    IN      UINT32  PointerId,
-+    IN OUT  UINT32  *EntriesCount,
-+    OUT     LPVOID  PenInfo)
-+{
-+    return FALSE;
-+}
-+
-+static BOOL SkipPointerFrameMessages(
-+    IN  UINT32   PointerId)
-+{
-+    return TRUE;
-+}
-+
-+static BOOL GetPointerDeviceRects(
-+    IN  HANDLE  Device,
-+    OUT LPRECT  PointerDeviceRect,
-+    OUT LPRECT  DisplayRect)
-+{
-+    PointerDeviceRect->top = 0;
-+    PointerDeviceRect->left = 0;
-+    PointerDeviceRect->bottom = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-+    PointerDeviceRect->right = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-+
-+    DisplayRect->top = 0;
-+    DisplayRect->left = 0;
-+    DisplayRect->bottom = GetSystemMetrics(SM_CYVIRTUALSCREEN);
-+    DisplayRect->right = GetSystemMetrics(SM_CXVIRTUALSCREEN);
-+
-+    return TRUE;
-+}
-+
-+static BOOL GetPointerInfo(
-+    IN  DWORD           PointerId,
-+    OUT POINTER_INFO    *PointerInfo)
-+{
-+    PointerInfo->pointerType = PT_MOUSE;
-+    PointerInfo->pointerId = PointerId;
-+    PointerInfo->frameId = 0;
-+    PointerInfo->pointerFlags = POINTER_FLAG_NONE;
-+    PointerInfo->sourceDevice = NULL;
-+    PointerInfo->hwndTarget = NULL;
-+    GetCursorPos(&PointerInfo->ptPixelLocation);
-+    GetCursorPos(&PointerInfo->ptHimetricLocation);
-+    GetCursorPos(&PointerInfo->ptPixelLocationRaw);
-+    GetCursorPos(&PointerInfo->ptHimetricLocationRaw);
-+    PointerInfo->dwTime = 0;
-+    PointerInfo->historyCount = 1;
-+    PointerInfo->InputData = 0;
-+    PointerInfo->dwKeyStates = 0;
-+    PointerInfo->PerformanceCount = 0;
-+    PointerInfo->ButtonChangeType = POINTER_CHANGE_NONE;
-+
-+    return TRUE;
-+}
-+
-+} // namespace vxkex
+ /*!
+   \internal
+   see drawPrimitive for comments on the animation support
+diff --git a/src/plugins/styles/modernwindows/qwindowsvistastyle_p_p.h b/src/plugins/styles/modernwindows/qwindowsvistastyle_p_p.h
+index 3c67ef86..d0b9c426 100644
+--- a/src/plugins/styles/modernwindows/qwindowsvistastyle_p_p.h
++++ b/src/plugins/styles/modernwindows/qwindowsvistastyle_p_p.h
+@@ -122,6 +122,7 @@ public:
+     static int pixelMetricFromSystemDp(QStyle::PixelMetric pm, const QStyleOption *option = nullptr, const QWidget *widget = nullptr);
+     static int fixedPixelMetric(QStyle::PixelMetric pm);
+     static bool isLineEditBaseColorSet(const QStyleOption *option, const QWidget *widget);
++    static QRect scrollBarGripperBounds(QStyle::State flags, const QWidget *widget, QWindowsThemeData *theme);
+     static HWND winId(const QWidget *widget);
+     static bool useVista(bool update = false);
+     static QBackingStore *backingStoreForWidget(const QWidget *widget);
 diff --git a/src/widgets/styles/qwindowsstyle.cpp b/src/widgets/styles/qwindowsstyle.cpp
-index bab923db..fc693869 100644
+index a5ffa93e..af53d4e2 100644
 --- a/src/widgets/styles/qwindowsstyle.cpp
 +++ b/src/widgets/styles/qwindowsstyle.cpp
-@@ -60,6 +60,10 @@
+@@ -59,6 +59,10 @@
  
  #include <algorithm>
  
 +#if defined(Q_OS_WIN)
-+#include "../../plugins/platforms/windows/vxkex.h"
++#include <QtCore/private/qlegacyshims_win_p.h>
 +#endif
 +
  QT_BEGIN_NAMESPACE
  
  #if defined(Q_OS_WIN)
-@@ -254,6 +258,11 @@ void QWindowsStyle::polish(QPalette &pal)
+@@ -254,36 +258,55 @@ void QWindowsStyle::polish(QPalette &pal)
      QCommonStyle::polish(pal);
  }
  
@@ -2651,36 +2802,36 @@ index bab923db..fc693869 100644
  int QWindowsStylePrivate::pixelMetricFromSystemDp(QStyle::PixelMetric pm, const QStyleOption *, const QWidget *widget)
  {
  #if defined(Q_OS_WIN)
-@@ -261,29 +270,43 @@ int QWindowsStylePrivate::pixelMetricFromSystemDp(QStyle::PixelMetric pm, const
+     // The pixel metrics are in device indepentent pixels;
      // hardcode DPI to 1x 96 DPI.
      const int dpi = 96;
- 
++    
 +    static GetSystemMetricsForDpiFunc myGetSystemMetricsForDpi = 
 +        (GetSystemMetricsForDpiFunc)::GetProcAddress(::GetModuleHandle(L"User32"), "GetSystemMetricsForDpi");
 +
 +    static SystemParametersInfoForDpiFunc mySystemParametersInfoForDpi = 
 +        (SystemParametersInfoForDpiFunc)::GetProcAddress(::GetModuleHandle(L"User32"), "SystemParametersInfoForDpi");
-+
+ 
      switch (pm) {
      case QStyle::PM_DockWidgetFrameWidth:
 -        return GetSystemMetricsForDpi(SM_CXFRAME, dpi);
-+        return myGetSystemMetricsForDpi ? myGetSystemMetricsForDpi(SM_CXFRAME, dpi) : vxkex::GetSystemMetricsForDpi(SM_CXFRAME, dpi);
++        return myGetSystemMetricsForDpi ? myGetSystemMetricsForDpi(SM_CXFRAME, dpi) : QLegacyShims::GetSystemMetricsForDpi(SM_CXFRAME, dpi);
  
      case QStyle::PM_TitleBarHeight: {
 -        const int resizeBorderThickness =
 -            GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
 +        const int resizeBorderThickness = myGetSystemMetricsForDpi ?
 +            (myGetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + myGetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)) :
-+            (vxkex::GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + vxkex::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)) ;
++            (QLegacyShims::GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + QLegacyShims::GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)) ;
          if (widget && (widget->windowType() == Qt::Tool))
 -            return GetSystemMetricsForDpi(SM_CYSMCAPTION, dpi) + resizeBorderThickness;
 -        return GetSystemMetricsForDpi(SM_CYCAPTION, dpi) + resizeBorderThickness;
 +            return myGetSystemMetricsForDpi ? 
 +                (myGetSystemMetricsForDpi(SM_CYSMCAPTION, dpi) + resizeBorderThickness) :
-+                (vxkex::GetSystemMetricsForDpi(SM_CYSMCAPTION, dpi) + resizeBorderThickness);
++                (QLegacyShims::GetSystemMetricsForDpi(SM_CYSMCAPTION, dpi) + resizeBorderThickness);
 +        return myGetSystemMetricsForDpi ? 
 +            (myGetSystemMetricsForDpi(SM_CYCAPTION, dpi) + resizeBorderThickness) :
-+            (vxkex::GetSystemMetricsForDpi(SM_CYCAPTION, dpi) + resizeBorderThickness);
++            (QLegacyShims::GetSystemMetricsForDpi(SM_CYCAPTION, dpi) + resizeBorderThickness);
      }
  
      case QStyle::PM_ScrollBarExtent:
@@ -2690,7 +2841,7 @@ index bab923db..fc693869 100644
 -            if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0, dpi))
 +            BOOL bResult = mySystemParametersInfoForDpi 
 +                ? mySystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0, dpi) 
-+                : vxkex::SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0, dpi);
++                : QLegacyShims::SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICS), &ncm, 0, dpi);
 +            if (bResult)
                  return qMax(ncm.iScrollHeight, ncm.iScrollWidth);
          }
@@ -2698,7 +2849,7 @@ index bab923db..fc693869 100644
  
      case  QStyle::PM_MdiSubWindowFrameWidth:
 -        return GetSystemMetricsForDpi(SM_CYFRAME, dpi);
-+        return myGetSystemMetricsForDpi ? myGetSystemMetricsForDpi(SM_CYFRAME, dpi) : vxkex::GetSystemMetricsForDpi(SM_CYFRAME, dpi);
++        return myGetSystemMetricsForDpi ? myGetSystemMetricsForDpi(SM_CYFRAME, dpi) : QLegacyShims::GetSystemMetricsForDpi(SM_CYFRAME, dpi);
  
      default:
          break;
