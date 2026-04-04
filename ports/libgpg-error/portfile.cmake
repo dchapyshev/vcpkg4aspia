@@ -4,7 +4,7 @@ vcpkg_download_distfile(tarball
         "https://mirrors.dotsrc.org/gcrypt/libgpg-error/libgpg-error-${VERSION}.tar.bz2"
         "https://www.mirrorservice.org/sites/ftp.gnupg.org/gcrypt/libgpg-error/libgpg-error-${VERSION}.tar.bz2"
     FILENAME "libgpg-error-${VERSION}.tar.bz2"
-    SHA512 b292ae516d5dddcfe761a2cac516a765ed0773f43afa5561d0f316962a71cab7cfa7ba5f36829faa5b814a33e3be5234d94b2592a570e471fedc2d2822fb49fa
+    SHA512 86a2b4f94928e88aab23c84e0febb702453617edf3cddf45d0ed9ea817007085a6d132214fd2c855d816ec296514401157e89dab2790aea1edf5c376ea7e1f56
 )
 vcpkg_extract_source_archive(
     SOURCE_PATH
