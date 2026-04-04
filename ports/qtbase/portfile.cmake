@@ -151,17 +151,6 @@ list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_pkg_config:BOOL=ON)
 # For Aspia: Needed for Windows 7 support (to prevent CoIncrementMTAUsage function usage).
 list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_cpp_winrt:BOOL=OFF)
 
-# For Aspia: Disable unused features.
-list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_textmarkdownreader:BOOL=OFF)
-list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_textmarkdownwriter:BOOL=OFF)
-list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_textodfwriter:BOOL=OFF)
-list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_imageformat_jpeg:BOOL=OFF)
-# list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_mdiarea:BOOL=OFF) # Needed for qttools
-list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_splashscreen:BOOL=OFF)
-list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_tiff:BOOL=OFF)
-list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_webp:BOOL=OFF)
-# list(APPEND FEATURE_CORE_OPTIONS -DFEATURE_whatsthis:BOOL=OFF) # Needed for qttools
-
 # Network features:
  vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_NET_OPTIONS
  FEATURES
