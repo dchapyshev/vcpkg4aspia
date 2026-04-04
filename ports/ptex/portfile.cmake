@@ -2,10 +2,11 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO wdas/ptex
     REF "v${VERSION}"
-    SHA512 34fcaf1c4fe27cb4e66d66bb729137ef17ffeea2bc2d849f2f5f543b19acc250f425633142320ce797c2a086e04bc3e0870c94928ad45d94e34faee71af36890
+    SHA512 26265899d3bb47eca67052d69b08efb89a01cf06a01a4aabdd8118e0497aac87319317450719ac56ea676bbb2ea771bd9b8fe73bc41caa8a2a6818cbc3d83bea
     HEAD_REF master
     PATCHES
         fix-build.patch
+        fix-android.patch
 )
 
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "static" BUILD_STATIC_LIB)
@@ -15,6 +16,7 @@ vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     DISABLE_PARALLEL_CONFIGURE
     OPTIONS
+        -DCMAKE_CXX_STANDARD=17
         "-DPTEX_VER=v${VERSION}"
         -DPTEX_BUILD_SHARED_LIBS=${BUILD_SHARED_LIB}
         -DPTEX_BUILD_STATIC_LIBS=${BUILD_STATIC_LIB}

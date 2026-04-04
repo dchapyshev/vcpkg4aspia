@@ -9,15 +9,18 @@ endif()
 vcpkg_find_acquire_program(FLEX)
 vcpkg_find_acquire_program(BISON)
 
-vcpkg_from_github(
-    OUT_SOURCE_PATH SOURCE_PATH
-    REPO apache/thrift
-    REF "v${VERSION}"
-    SHA512 5e4ee9870b30fe5ba484d39781c435716f7f3903793dc8aae96594ca813b1a5a73363b84719038ca8fa3ab8ef0a419a28410d936ff7b3bbadf36fc085a6883ae
-    HEAD_REF master
+vcpkg_download_distfile(ARCHIVE
+    URLS "https://archive.apache.org/dist/thrift/${VERSION}/thrift-${VERSION}.tar.gz"
+    FILENAME "thrift-${VERSION}.tar.gz"
+    SHA512 beb37ee2a295fae7df12cce6449c92799076771bae515fafcc790a62ac6e76ac5584f102315d466b8f5f98e236c9dc4a244695bdcd9f1392d6e9a13d365ddadc
+)
+
+vcpkg_extract_source_archive(
+    SOURCE_PATH
+    ARCHIVE "${ARCHIVE}"
     PATCHES
-      "correct-paths.patch"
-      "pc-suffix.patch"
+        pc-suffix.patch
+        fix_missing_quotes_in_config_and_bin_path.patch
 )
 
 if (VCPKG_TARGET_IS_OSX)

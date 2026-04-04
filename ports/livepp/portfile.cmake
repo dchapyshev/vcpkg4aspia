@@ -5,7 +5,7 @@ vcpkg_download_distfile(
     ARCHIVE
     URLS https://liveplusplus.tech/downloads/${LIVEPP_FILE}
     FILENAME "${LIVEPP_FILE}"
-    SHA512 a155f206f4e3cd73971820073db7d1449a3e02f45f2a05431f7536f703d948edf7e78dfdf06e7d0d7af728888c5fab638ef91aeb82f6ca46ec829de3beff95ec
+    SHA512 1b75d9922a46dc6e4176c6581a5c457e3f7f00d5a1a26e3976cab619c45c834730088169fe8dfd5f95d543851db7467f3dd0d92733d4bc00f8da5bfdef55af3d
 )
 
 vcpkg_extract_source_archive(

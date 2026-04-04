@@ -14,19 +14,19 @@ endif()
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR})
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
 
-if("latest" IN_LIST FEATURES) # latest = core currently
-    set(QT_BUILD_LATEST ON)
-    set(PATCHES
-        patches/Qt5BasicConfig.patch
-        patches/Qt5PluginTarget.patch
-        patches/create_cmake.patch
-        )
-else()
-    set(PATCHES
-        patches/Qt5BasicConfig.patch
-        patches/Qt5PluginTarget.patch
-        patches/create_cmake.patch
-    )
+set(WITH_PGSQL_PLUGIN OFF)
+if("postgresqlplugin" IN_LIST FEATURES)
+    set(WITH_PGSQL_PLUGIN ON)
+endif()
+
+set(WITH_MYSQL_PLUGIN OFF)
+if ("mysqlplugin" IN_LIST FEATURES)
+    set(WITH_MYSQL_PLUGIN  ON)
+endif()
+
+set(WITH_OPENSSL OFF)
+if ("openssl" IN_LIST FEATURES)
+    set(WITH_OPENSSL ON)
 endif()
 
 include(qt_port_functions)
@@ -49,45 +49,52 @@ endif()
 #########################
 ## Downloading Qt5-Base
 
-qt_download_submodule(  OUT_SOURCE_PATH SOURCE_PATH
-                        PATCHES
-                            # CVE fixes from https://download.qt.io/official_releases/qt/5.15/
-                            patches/0001-CVE-2023-51714-qtbase-5.15.diff
-                            patches/0002-CVE-2023-51714-qtbase-5.15.diff
-                            patches/CVE-2024-25580-qtbase-5.15.diff
-                            patches/CVE-2024-39936-qtbase-5.15.patch
+set(PATCHES
+    # CVE fixes from https://download.qt.io/archive/qt/5.15/
+    patches/CVE-2025-4211-qtbase-5.15.diff
+    patches/CVE-2025-5455-qtbase-5.15.patch
+    patches/CVE-2025-30348-qtbase-5.15.diff
 
-                            patches/winmain_pro.patch          #Moves qtmain to manual-link
-                            patches/windows_prf.patch          #fixes the qtmain dependency due to the above move
-                            patches/qt_app.patch               #Moves the target location of qt5 host apps to always install into the host dir.
-                            patches/gui_configure.patch        #Patches the gui configure.json to break freetype/fontconfig autodetection because it does not include its dependencies.
-                            patches/xlib.patch                 #Patches Xlib check to actually use Pkgconfig instead of makeSpec only
-                            patches/egl.patch                  #Fix egl detection logic.
-                            patches/qtbug_96392.patch          #Backport fix for QTBUG-96392
-                            patches/mysql_plugin_include.patch #Fix include path of mysql plugin
-                            patches/mysql-configure.patch      #Fix mysql project
-                            patches/patch-qtbase-memory_resource.diff # From https://bugreports.qt.io/browse/QTBUG-114316
-                            #patches/static_opengl.patch       #Use this patch if you really want to statically link angle on windows (e.g. using -opengl es2 and -static).
-                                                               #Be carefull since it requires definining _GDI32_ for all dependent projects due to redefinition errors in the
-                                                               #the windows supplied gl.h header and the angle gl.h otherwise.
-                            # CMake fixes
-                            patches/Qt5BasicConfig.patch
-                            patches/Qt5PluginTarget.patch
-                            patches/create_cmake.patch
-                            patches/Qt5GuiConfigExtras.patch   # Patches the library search behavior for EGL since angle is not build with Qt
-                            patches/fix_angle.patch            # Failed to create OpenGL context for format QSurfaceFormat ...
-                            patches/mingw9.patch               # Fix compile with MinGW-W64 9.0.0: Redefinition of 'struct _FILE_ID_INFO'
-                            patches/qmake-arm64.patch          # Fix by Oliver Wolff to support ARM64 hosts on Windows
-                            patches/harfbuzz.patch
-                    )
+    patches/winmain_pro.patch          #Moves qtmain to manual-link
+    patches/windows_prf.patch          #fixes the qtmain dependency due to the above move
+    patches/qt_app.patch               #Moves the target location of qt5 host apps to always install into the host dir.
+    patches/xlib.patch                 #Patches Xlib check to actually use Pkgconfig instead of makeSpec only
+    patches/vulkan-windows.diff        #Forces QMake to use vulkan from vcpkg instead of VULKAN_SDK system variable
+    patches/egl.patch                  #Fix egl detection logic.
+    patches/qtbug_96392.patch          #Backport fix for QTBUG-96392
+    patches/md4c.diff                  #Include vcpkg md4c.h
+    patches/mysql_plugin_include.patch #Fix include path of mysql plugin
+    patches/mysql-configure.patch      #Fix mysql project
+    patches/patch-qtbase-memory_resource.diff # From https://bugreports.qt.io/browse/QTBUG-114316
+    #patches/static_opengl.patch       #Use this patch if you really want to statically link angle on windows (e.g. using -opengl es2 and -static).
+                                       #Be careful since it requires defining _GDI32_ for all dependent projects due to redefinition errors in the
+                                       #the windows supplied gl.h header and the angle gl.h otherwise.
+
+    # CMake fixes
+    patches/Qt5BasicConfig.patch
+    patches/Qt5PluginTarget.patch
+    patches/create_cmake.patch
+    patches/Qt5GuiConfigExtras.patch   # Patches the library search behavior for EGL since angle is not build with Qt
+    patches/fix_angle.patch            # Failed to create OpenGL context for format QSurfaceFormat ...
+    patches/mingw9.patch               # Fix compile with MinGW-W64 9.0.0: Redefinition of 'struct _FILE_ID_INFO'
+    patches/qmake-arm64.patch          # Fix by Oliver Wolff to support ARM64 hosts on Windows
+)
+if(VCPKG_TARGET_IS_OSX)
+    execute_process(COMMAND xcrun --sdk macosx --show-sdk-version
+            OUTPUT_VARIABLE OSX_SDK_VERSION
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(${OSX_SDK_VERSION} VERSION_GREATER_EQUAL 26)
+        # macOS 26 Tahoe has removed AGL APIs https://bugreports.qt.io/browse/QTBUG-137687
+        list(APPEND PATCHES patches/macos26-opengl.patch)
+    endif()
+endif()
+
+qt_download_submodule(OUT_SOURCE_PATH SOURCE_PATH PATCHES ${PATCHES})
 
 # Remove vendored dependencies to ensure they are not picked up by the build
-foreach(DEPENDENCY zlib freetype libjpeg libpng double-conversion sqlite pcre2)
-    if(EXISTS ${SOURCE_PATH}/src/3rdparty/${DEPENDENCY})
-        file(REMOVE_RECURSE ${SOURCE_PATH}/src/3rdparty/${DEPENDENCY})
-    endif()
+foreach(DEPENDENCY IN ITEMS double-conversion freetype harfbuzz-ng libjpeg libpng md4c pcre2 sqlite zlib)
+    file(REMOVE_RECURSE "${SOURCE_PATH}/src/3rdparty/${DEPENDENCY}")
 endforeach()
-#file(REMOVE_RECURSE ${SOURCE_PATH}/include/QtZlib)
 
 #########################
 ## Setup Configure options
@@ -108,40 +115,13 @@ set(CORE_OPTIONS
 ## 3rd Party Libs
 list(APPEND CORE_OPTIONS
     -system-zlib
+    -system-libjpeg
+    -system-libmd4c
     -system-libpng
-    -system-freetype
     -system-pcre
     -system-doubleconversion
-    -system-sqlite
-    -qt-harfbuzz
-    -no-angle
+    -no-angle # Qt does not need to build angle. VCPKG will build angle!
     -no-glib
-    -no-libjpeg
-    -no-openssl
-    -no-feature-concurrent
-    -no-feature-dtls
-    -no-feature-lcdnumber
-    -no-feature-movie
-    -no-feature-networkdiskcache
-    -no-feature-textodfwriter
-    -no-feature-future
-    -no-feature-ftp
-    -no-feature-sharedmemory
-    -no-feature-splashscreen
-    -no-feature-udpsocket
-    -no-feature-textmarkdownreader
-    -no-feature-textmarkdownwriter
-    -no-feature-imageformat_jpeg
-    -no-feature-gestures
-    -no-feature-sessionmanager
-    -no-feature-statemachine
-    -no-sql-sqlite2
-    -no-sql-psql
-    -no-sql-mysql
-    -no-sql-odbc
-    -no-sql-oci
-    -no-sql-ibase
-    -no-sql-db2
     -no-feature-gssapi
     )
 
@@ -154,115 +134,195 @@ else()
     list(APPEND CORE_OPTIONS -dbus-runtime)
 endif()
 
+if(WITH_PGSQL_PLUGIN)
+    list(APPEND CORE_OPTIONS -sql-psql)
+else()
+    list(APPEND CORE_OPTIONS -no-sql-psql)
+endif()
+if(WITH_MYSQL_PLUGIN)
+    list(APPEND CORE_OPTIONS -sql-mysql)
+else()
+    list(APPEND CORE_OPTIONS -no-sql-mysql)
+endif()
+
+if(WITH_OPENSSL)
+    list(APPEND CORE_OPTIONS -openssl-linked)
+else()
+    list(APPEND CORE_OPTIONS -no-openssl)
+endif()
+
+if("cups" IN_LIST FEATURES)
+    message(WARNING "${PORT} feature 'cups' requires libcups2-dev from system package manger.")
+    list(APPEND CORE_OPTIONS -cups)
+else()
+    list(APPEND CORE_OPTIONS -no-cups)
+endif()
+
+if ("vulkan" IN_LIST FEATURES)
+    list(APPEND CORE_OPTIONS --vulkan=yes)
+else()
+    list(APPEND CORE_OPTIONS --vulkan=no)
+endif()
+
 find_library(ZLIB_RELEASE NAMES z zlib PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(ZLIB_DEBUG NAMES z zlib zd zlibd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+find_library(JPEG_RELEASE NAMES jpeg jpeg-static PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+find_library(JPEG_DEBUG NAMES jpeg jpeg-static jpegd jpeg-staticd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 find_library(LIBPNG_RELEASE NAMES png16 libpng16 PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) #Depends on zlib
 find_library(LIBPNG_DEBUG NAMES png16 png16d libpng16 libpng16d PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+find_library(PSQL_RELEASE NAMES pq libpq PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
+find_library(PSQL_DEBUG NAMES pq libpq pqd libpqd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+
+if(NOT (PSQL_RELEASE MATCHES ".*\.so") AND NOT (PSQL_DEBUG MATCHES ".*\.so"))
+    find_library(PSQL_COMMON_RELEASE NAMES pgcommon libpgcommon PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
+    find_library(PSQL_COMMON_DEBUG NAMES pgcommon libpgcommon pgcommond libpgcommond PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+    find_library(PSQL_PORT_RELEASE NAMES pgport libpgport PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
+    find_library(PSQL_PORT_DEBUG NAMES pgport libpgport pgportd libpgportd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+endif()
+find_library(MYSQL_RELEASE NAMES libmysql mysqlclient PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
+find_library(MYSQL_DEBUG NAMES libmysql libmysqld mysqlclient mysqlclientd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 
 find_library(PCRE2_RELEASE NAMES pcre2-16 pcre2-16-static PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
 find_library(PCRE2_DEBUG NAMES pcre2-16 pcre2-16-static pcre2-16d pcre2-16-staticd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(FREETYPE_RELEASE NAMES freetype PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) #zlib, bzip2, libpng
-find_library(FREETYPE_DEBUG NAMES freetype freetyped PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(DOUBLECONVERSION_RELEASE NAMES double-conversion PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(DOUBLECONVERSION_DEBUG NAMES double-conversion PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(SQLITE_RELEASE NAMES sqlite3 PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH) # Depends on openssl and zlib(linux)
-find_library(SQLITE_DEBUG NAMES sqlite3 sqlite3d PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 
-if (VCPKG_TARGET_IS_LINUX OR VCPKG_TARGET_IS_OSX)
-    find_library(ICUUC_RELEASE NAMES icuuc libicuuc PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-    find_library(ICUUC_DEBUG NAMES icuucd libicuucd icuuc libicuuc PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
-    # Was installed in WSL but not on CI machine
-    #    find_library(ICULX_RELEASE NAMES iculx libiculx PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-    #    find_library(ICULX_DEBUG NAMES iculxd libiculxd iculx libiculx PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
-    find_library(ICUIO_RELEASE NAMES icuio libicuio PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-    find_library(ICUIO_DEBUG NAMES icuiod libicuiod icuio libicuio PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-    find_library(ICUIN_RELEASE NAMES icui18n libicui18n icuin PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-    find_library(ICUIN_DEBUG NAMES icui18nd libicui18nd icui18n libicui18n icuin icuind PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-    find_library(ICUDATA_RELEASE NAMES icudata libicudata icudt PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-    find_library(ICUDATA_DEBUG NAMES icudatad libicudatad icudata libicudata icudtd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-    set(ICU_RELEASE "${ICUIN_RELEASE} ${ICULX_RELEASE} ${ICUUC_RELEASE} ${ICUIO_RELEASE} ${ICUDATA_RELEASE}")
-    set(ICU_DEBUG "${ICUIN_DEBUG} ${ICULX_DEBUG} ${ICUUC_DEBUG} ${ICUIO_DEBUG} ${ICUDATA_DEBUG}")
-    if(VCPKG_TARGET_IS_WINDOWS)
-        set(ICU_RELEASE "${ICU_RELEASE} -ladvapi32")
-        set(ICU_DEBUG "${ICU_DEBUG} -ladvapi32" )
-    endif()
+find_library(ICUUC_RELEASE NAMES icuuc libicuuc PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+find_library(ICUUC_DEBUG NAMES icuucd libicuucd icuuc libicuuc PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+find_library(ICUIO_RELEASE NAMES icuio libicuio PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+find_library(ICUIO_DEBUG NAMES icuiod libicuiod icuio libicuio PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+find_library(ICUIN_RELEASE NAMES icui18n libicui18n icuin PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+find_library(ICUIN_DEBUG NAMES icui18nd libicui18nd icui18n libicui18n icuin icuind PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+find_library(ICUDATA_RELEASE NAMES icudata libicudata icudt PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+find_library(ICUDATA_DEBUG NAMES icudatad libicudatad icudata libicudata icudtd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+set(ICU_RELEASE "${ICUIN_RELEASE} ${ICULX_RELEASE} ${ICUUC_RELEASE} ${ICUIO_RELEASE} ${ICUDATA_RELEASE}")
+set(ICU_DEBUG "${ICUIN_DEBUG} ${ICULX_DEBUG} ${ICUUC_DEBUG} ${ICUIO_DEBUG} ${ICUDATA_DEBUG}")
+if(VCPKG_TARGET_IS_WINDOWS)
+    set(ICU_RELEASE "${ICU_RELEASE} -ladvapi32")
+    set(ICU_DEBUG "${ICU_DEBUG} -ladvapi32" )
 endif()
 
-find_library(FONTCONFIG_RELEASE NAMES fontconfig PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(FONTCONFIG_DEBUG NAMES fontconfig PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(EXPAT_RELEASE NAMES expat PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(EXPAT_DEBUG NAMES expat PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
 #Dependent libraries
-find_library(ZSTD_RELEASE NAMES zstd PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(ZSTD_DEBUG NAMES zstd PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-find_library(BZ2_RELEASE bz2 PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-find_library(BZ2_DEBUG bz2 bz2d PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
-
-set(FREETYPE_RELEASE_ALL "${FREETYPE_RELEASE} ${BZ2_RELEASE} ${LIBPNG_RELEASE} ${ZLIB_RELEASE}")
-set(FREETYPE_DEBUG_ALL "${FREETYPE_DEBUG} ${BZ2_DEBUG} ${LIBPNG_DEBUG} ${ZLIB_DEBUG}")
+find_library(SSL_RELEASE ssl ssleay32 PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+find_library(SSL_DEBUG ssl ssleay32 ssld ssleay32d PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
+find_library(EAY_RELEASE libeay32 crypto libcrypto PATHS "${CURRENT_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+find_library(EAY_DEBUG libeay32 crypto libcrypto libeay32d cryptod libcryptod PATHS "${CURRENT_INSTALLED_DIR}/debug/lib" NO_DEFAULT_PATH)
 
 set(RELEASE_OPTIONS
+            "LIBJPEG_LIBS=${JPEG_RELEASE}"
             "ZLIB_LIBS=${ZLIB_RELEASE}"
             "LIBPNG_LIBS=${LIBPNG_RELEASE} ${ZLIB_RELEASE}"
             "PCRE2_LIBS=${PCRE2_RELEASE}"
-            "FREETYPE_LIBS=${FREETYPE_RELEASE_ALL}"
-            "QMAKE_LIBS_PRIVATE+=${BZ2_RELEASE}"
             "QMAKE_LIBS_PRIVATE+=${LIBPNG_RELEASE} ${ZLIB_RELEASE}"
             )
 set(DEBUG_OPTIONS
+            "LIBJPEG_LIBS=${JPEG_DEBUG}"
             "ZLIB_LIBS=${ZLIB_DEBUG}"
             "LIBPNG_LIBS=${LIBPNG_DEBUG} ${ZLIB_DEBUG}"
             "PCRE2_LIBS=${PCRE2_DEBUG}"
-            "FREETYPE_LIBS=${FREETYPE_DEBUG_ALL}"
-            "QMAKE_LIBS_PRIVATE+=${BZ2_DEBUG}"
             "QMAKE_LIBS_PRIVATE+=${LIBPNG_DEBUG} ${ZLIB_DEBUG}"
-            "QMAKE_LIBS_PRIVATE+=${ZSTD_DEBUG}"
             )
 
-if(VCPKG_TARGET_IS_WINDOWS)
-    if(NOT ${VCPKG_LIBRARY_LINKAGE} STREQUAL "static")
-        list(APPEND CORE_OPTIONS -no-opengl -no-dbus -no-icu)
-    else()
-        list(APPEND CORE_OPTIONS -no-opengl -no-dbus -no-icu)
-    endif()
-    list(APPEND RELEASE_OPTIONS
-            "SQLITE_LIBS=${SQLITE_RELEASE}"
-        )
+x_vcpkg_pkgconfig_get_modules(PREFIX freetype MODULES freetype2 LIBS)
+list(APPEND CORE_OPTIONS -system-freetype)
+list(APPEND RELEASE_OPTIONS "FREETYPE_LIBS=${freetype_LIBS_RELEASE}")
+list(APPEND DEBUG_OPTIONS "FREETYPE_LIBS=${freetype_LIBS_DEBUG}")
 
-    list(APPEND DEBUG_OPTIONS
-            "SQLITE_LIBS=${SQLITE_DEBUG}"
+x_vcpkg_pkgconfig_get_modules(PREFIX harfbuzz MODULES harfbuzz LIBS)
+if(VCPKG_TARGET_IS_OSX)
+    string(APPEND harfbuzz_LIBRARIES_RELEASE " -framework ApplicationServices")
+    string(APPEND harfbuzz_LIBRARIES_DEBUG " -framework ApplicationServices")
+endif()
+list(APPEND CORE_OPTIONS -system-harfbuzz)
+list(APPEND RELEASE_OPTIONS "HARFBUZZ_LIBS=${harfbuzz_LIBS_RELEASE}")
+list(APPEND DEBUG_OPTIONS "HARFBUZZ_LIBS=${harfbuzz_LIBS_DEBUG}")
+
+if(NOT VCPKG_TARGET_IS_WINDOWS)
+    list(APPEND CORE_OPTIONS -fontconfig)
+    x_vcpkg_pkgconfig_get_modules(PREFIX fontconfig MODULES fontconfig LIBS)
+    list(APPEND RELEASE_OPTIONS "FONTCONFIG_LIBS=${fontconfig_LIBS_RELEASE}")
+    list(APPEND DEBUG_OPTIONS "FONTCONFIG_LIBS=${fontconfig_LIBS_DEBUG}")
+endif()
+
+if("sqlite3plugin" IN_LIST FEATURES)
+    list(APPEND CORE_OPTIONS -system-sqlite)
+    x_vcpkg_pkgconfig_get_modules(PREFIX sqlite3 MODULES sqlite3 LIBS)
+    list(APPEND RELEASE_OPTIONS "SQLITE_LIBS=${sqlite3_LIBS_RELEASE}")
+    list(APPEND DEBUG_OPTIONS "SQLITE_LIBS=${sqlite3_LIBS_DEBUG}")
+else()
+    list(APPEND CORE_OPTIONS -no-sql-sqlite)
+endif()
+
+if("zstd" IN_LIST FEATURES)
+    list(APPEND CORE_OPTIONS -zstd)
+    x_vcpkg_pkgconfig_get_modules(PREFIX libzstd MODULES libzstd LIBS)
+    list(APPEND RELEASE_OPTIONS "QMAKE_LIBS_PRIVATE+=${libzstd_LIBS_RELEASE}")
+    list(APPEND DEBUG_OPTIONS "QMAKE_LIBS_PRIVATE+=${libzstd_LIBS_DEBUG}")
+else()
+    list(APPEND CORE_OPTIONS -no-zstd)
+endif()
+
+if("icu" IN_LIST FEATURES)
+    list(APPEND CORE_OPTIONS -icu)
+
+    # This if/else corresponds to icu setup in src/corelib/configure.json.
+    if(VCPKG_TARGET_IS_WINDOWS AND VCPKG_LIBRARY_LINKAGE STREQUAL "static")
+        list(APPEND CORE_OPTIONS
+            "ICU_LIBS_RELEASE=${ICU_RELEASE}"
+            "ICU_LIBS_DEBUG=${ICU_DEBUG}"
         )
+    else()
+        list(APPEND RELEASE_OPTIONS "ICU_LIBS=${ICU_RELEASE}")
+        list(APPEND DEBUG_OPTIONS "ICU_LIBS=${ICU_DEBUG}")
+    endif()
+
+    list(APPEND RELEASE_OPTIONS "QMAKE_LIBS_PRIVATE+=${ICU_RELEASE}")
+    list(APPEND DEBUG_OPTIONS "QMAKE_LIBS_PRIVATE+=${ICU_DEBUG}")
+else()
+    list(APPEND CORE_OPTIONS -no-icu)
+endif()
+
+if(VCPKG_TARGET_IS_WINDOWS)
+    if(VCPKG_TARGET_IS_UWP)
+        list(APPEND CORE_OPTIONS -appstore-compliant)
+    endif()
+    if(NOT ${VCPKG_LIBRARY_LINKAGE} STREQUAL "static")
+        list(APPEND CORE_OPTIONS -opengl dynamic) # other options are "-no-opengl", "-opengl angle", and "-opengl desktop" and "-opengel es2"
+    else()
+        list(APPEND CORE_OPTIONS -opengl dynamic) # other possible option without moving angle dlls: "-opengl desktop". "-opengel es2" only works with commented patch
+    endif()
+    set(ADDITIONAL_WINDOWS_LIBS "-lws2_32 -lsecur32 -ladvapi32 -lshell32 -lcrypt32 -luser32 -lgdi32")
+
+    if(WITH_OPENSSL)
+        list(APPEND RELEASE_OPTIONS "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} ${ADDITIONAL_WINDOWS_LIBS}")
+        list(APPEND DEBUG_OPTIONS "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} ${ADDITIONAL_WINDOWS_LIBS}")
+    else()
+        list(APPEND CORE_OPTIONS -schannel)
+    endif()
+
+    if(WITH_PGSQL_PLUGIN)
+        list(APPEND RELEASE_OPTIONS "PSQL_LIBS=${PSQL_RELEASE} ${PSQL_PORT_RELEASE} ${PSQL_COMMON_RELEASE} ${SSL_RELEASE} ${EAY_RELEASE} ${ADDITIONAL_WINDOWS_LIBS} -lwldap32")
+        list(APPEND DEBUG_OPTIONS "PSQL_LIBS=${PSQL_DEBUG} ${PSQL_PORT_DEBUG} ${PSQL_COMMON_DEBUG} ${SSL_DEBUG} ${EAY_DEBUG} ${ADDITIONAL_WINDOWS_LIBS} -lwldap32")
+    endif()
 elseif(VCPKG_TARGET_IS_LINUX)
-    list(APPEND CORE_OPTIONS -fontconfig -xcb-xlib -xcb -linuxfb -icu)
-    list(APPEND RELEASE_OPTIONS
-            "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
-            "FONTCONFIG_LIBS=${FONTCONFIG_RELEASE} ${FREETYPE_RELEASE} ${EXPAT_RELEASE} -luuid"
-            "ICU_LIBS=${ICU_RELEASE}"
-            "QMAKE_LIBS_PRIVATE+=${ICU_RELEASE}"
-        )
-    list(APPEND DEBUG_OPTIONS
-            "SQLITE_LIBS=${SQLITE_DEBUG} -ldl -lpthread"
-            "FONTCONFIG_LIBS=${FONTCONFIG_DEBUG} ${FREETYPE_DEBUG} ${EXPAT_DEBUG} -luuid"
-            "ICU_LIBS=${ICU_DEBUG}"
-            "QMAKE_LIBS_PRIVATE+=${ICU_DEBUG}"
-        )
+    list(APPEND CORE_OPTIONS -xcb-xlib -xcb -linuxfb)
+
+    if(WITH_OPENSSL)
+        list(APPEND RELEASE_OPTIONS "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread")
+        list(APPEND DEBUG_OPTIONS "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread")
+    endif()
+
+    if(WITH_PGSQL_PLUGIN)
+        list(APPEND RELEASE_OPTIONS "PSQL_LIBS=${PSQL_RELEASE} ${PSQL_PORT_RELEASE} ${PSQL_TYPES_RELEASE} ${PSQL_COMMON_RELEASE} ${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread")
+        list(APPEND DEBUG_OPTIONS "PSQL_LIBS=${PSQL_DEBUG} ${PSQL_PORT_DEBUG} ${PSQL_TYPES_DEBUG} ${PSQL_COMMON_DEBUG} ${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread")
+    endif()
 elseif(VCPKG_TARGET_IS_OSX)
     if (VCPKG_LIBRARY_LINKAGE STREQUAL "dynamic")
         # Avoid frameworks for vcpkg
-        list(APPEND CORE_OPTIONS -no-framework -icu)
+        list(APPEND CORE_OPTIONS -no-framework)
         # Such that Qt executables like moc find their libs. The default path is ../Frameworks
-        list(APPEND DEBUG_OPTIONS -R ${CURRENT_INSTALLED_DIR}/debug/lib
-                "ICU_LIBS=${ICU_DEBUG}"
-                "QMAKE_LIBS_PRIVATE+=${ICU_DEBUG}")
-        list(APPEND RELEASE_OPTIONS -R ${CURRENT_INSTALLED_DIR}/lib
-                "ICU_LIBS=${ICU_RELEASE}"
-                "QMAKE_LIBS_PRIVATE+=${ICU_RELEASE}")
+        list(APPEND DEBUG_OPTIONS -R ${CURRENT_INSTALLED_DIR}/debug/lib)
+        list(APPEND RELEASE_OPTIONS -R ${CURRENT_INSTALLED_DIR}/lib)
     endif()
 
-    list(APPEND CORE_OPTIONS -fontconfig)
     if("${VCPKG_TARGET_ARCHITECTURE}" MATCHES "arm64")
         FILE(READ "${SOURCE_PATH}/mkspecs/common/macx.conf" _tmp_contents)
         string(REPLACE "QMAKE_APPLE_DEVICE_ARCHS = x86_64" "QMAKE_APPLE_DEVICE_ARCHS = arm64" _tmp_contents ${_tmp_contents})
@@ -271,9 +331,6 @@ elseif(VCPKG_TARGET_IS_OSX)
     if(DEFINED VCPKG_OSX_DEPLOYMENT_TARGET)
         set(ENV{QMAKE_MACOSX_DEPLOYMENT_TARGET} ${VCPKG_OSX_DEPLOYMENT_TARGET})
     else()
-        execute_process(COMMAND xcrun --show-sdk-version
-                OUTPUT_VARIABLE OSX_SDK_VERSION
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
         message(STATUS "Detected OSX SDK Version: ${OSX_SDK_VERSION}")
         string(REGEX MATCH "^([0-9]+)\\.([0-9]+)" OSX_SDK_VERSION "${OSX_SDK_VERSION}")
         message(STATUS "Major.Minor OSX SDK Version: ${OSX_SDK_VERSION}")
@@ -316,15 +373,22 @@ elseif(VCPKG_TARGET_IS_OSX)
     string(REPLACE "QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.13" "QMAKE_MACOSX_DEPLOYMENT_TARGET = ${VCPKG_OSX_DEPLOYMENT_TARGET}" _tmp_contents ${_tmp_contents})
     file(WRITE "${SOURCE_PATH}/mkspecs/common/macx.conf" ${_tmp_contents})
     #list(APPEND QT_PLATFORM_CONFIGURE_OPTIONS HOST_PLATFORM ${TARGET_MKSPEC})
-    list(APPEND RELEASE_OPTIONS
-            "SQLITE_LIBS=${SQLITE_RELEASE} -ldl -lpthread"
-            "FONTCONFIG_LIBS=${FONTCONFIG_RELEASE} ${FREETYPE_RELEASE} ${EXPAT_RELEASE} -liconv"
-        )
-    list(APPEND DEBUG_OPTIONS
-            "SQLITE_LIBS=${SQLITE_DEBUG} -ldl -lpthread"
-            "FONTCONFIG_LIBS=${FONTCONFIG_DEBUG} ${FREETYPE_DEBUG} ${EXPAT_DEBUG} -liconv"
-        )
+
+    if(WITH_OPENSSL)
+        list(APPEND RELEASE_OPTIONS "OPENSSL_LIBS=${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread")
+        list(APPEND DEBUG_OPTIONS "OPENSSL_LIBS=${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread")
+    endif()
+
+    if(WITH_PGSQL_PLUGIN)
+        list(APPEND RELEASE_OPTIONS "PSQL_LIBS=${PSQL_RELEASE} ${PSQL_PORT_RELEASE} ${PSQL_TYPES_RELEASE} ${PSQL_COMMON_RELEASE} ${SSL_RELEASE} ${EAY_RELEASE} -ldl -lpthread")
+        list(APPEND DEBUG_OPTIONS "PSQL_LIBS=${PSQL_DEBUG} ${PSQL_PORT_DEBUG} ${PSQL_TYPES_DEBUG} ${PSQL_COMMON_DEBUG} ${SSL_DEBUG} ${EAY_DEBUG} -ldl -lpthread")
+    endif()
 endif()
+
+if (WITH_MYSQL_PLUGIN)
+    list(APPEND RELEASE_OPTIONS "MYSQL_LIBS=${MYSQL_RELEASE} ${SSL_RELEASE} ${EAY_RELEASE} ${ZLIB_RELEASE} ${ADDITIONAL_WINDOWS_LIBS}")
+    list(APPEND DEBUG_OPTIONS "MYSQL_LIBS=${MYSQL_DEBUG} ${SSL_DEBUG} ${EAY_DEBUG} ${ZLIB_DEBUG} ${ADDITIONAL_WINDOWS_LIBS}")
+endif(WITH_MYSQL_PLUGIN)
 
 ## Do not build tests or examples
 list(APPEND CORE_OPTIONS
@@ -471,3 +535,19 @@ if(VCPKG_TARGET_IS_OSX)
         file(WRITE "${_new_filename}" "Name: ${_name}\nDescription: Forwarding to the _debug version by vcpkg\n${_version}\nRequires: ${_name}_debug\n")
     endforeach()
 endif()
+# #Code to get generated CMake files from CI
+# file(RENAME "${CURRENT_PACKAGES_DIR}/share/cmake/Qt5Core/Qt5CoreConfig.cmake" "${CURRENT_BUILDTREES_DIR}/Qt5CoreConfig.cmake.log")
+# file(GLOB_RECURSE CMAKE_GUI_FILES "${CURRENT_PACKAGES_DIR}/share/cmake/Qt5Gui/*.cmake" )
+# foreach(cmake_file ${CMAKE_GUI_FILES})
+    # get_filename_component(cmake_filename "${cmake_file}" NAME)
+    # file(COPY "${cmake_file}" DESTINATION "${CURRENT_BUILDTREES_DIR}")
+    # file(RENAME "${CURRENT_BUILDTREES_DIR}/${cmake_filename}" "${CURRENT_BUILDTREES_DIR}/${cmake_filename}.log")
+# endforeach()
+# #Copy config.log from buildtree/triplet to buildtree to get the log in CI in case of failure
+# if(EXISTS "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/config.log")
+    # file(RENAME "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/config.log" "${CURRENT_BUILDTREES_DIR}/config-rel.log")
+# endif()
+# if(EXISTS "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-dbg/config.log")
+    # file(RENAME "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-dbg/config.log" "${CURRENT_BUILDTREES_DIR}/config-dbg.log")
+# endif()
+# message(FATAL_ERROR "Need Info from CI!")
