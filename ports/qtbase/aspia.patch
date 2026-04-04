@@ -1,35 +1,3 @@
- mkspecs/features/qt.prf                            |   2 +-
- src/corelib/io/qstandardpaths_win.cpp              |  11 +-
- src/corelib/kernel/qeventdispatcher_win.cpp        |   9 +-
- src/corelib/kernel/qfunctions_win.cpp              |  12 +-
- src/corelib/thread/qfutex_p.h                      |   4 +-
- src/corelib/thread/qmutex.cpp                      |   2 +
- src/corelib/thread/qmutex_p.h                      |   2 +
- src/corelib/thread/qmutex_win.cpp                  |  30 ++
- src/corelib/thread/qthread_win.cpp                 |  58 ++-
- src/gui/rhi/qrhid3d11.cpp                          |  35 +-
- src/gui/rhi/qrhid3d11_p.h                          |   1 +
- src/gui/rhi/qrhid3d12.cpp                          |  43 ++-
- src/gui/text/windows/qwindowsfontdatabasebase.cpp  |  11 +-
- src/network/kernel/qdnslookup_win.cpp              | 206 +++++-----
- src/plugins/platforms/windows/qwin10helpers.cpp    |  94 +++--
- src/plugins/platforms/windows/qwindowscontext.cpp  | 158 +++++++-
- src/plugins/platforms/windows/qwindowscontext.h    |  93 +++++
- src/plugins/platforms/windows/qwindowsdrag.cpp     |   8 +-
- .../platforms/windows/qwindowsintegration.cpp      |  10 +-
- .../platforms/windows/qwindowskeymapper.cpp        |  13 +-
- .../platforms/windows/qwindowspointerhandler.cpp   |  55 ++-
- src/plugins/platforms/windows/qwindowsscreen.cpp   |  27 +-
- src/plugins/platforms/windows/qwindowstheme.cpp    | 155 ++++----
- src/plugins/platforms/windows/qwindowswindow.cpp   |  61 ++-
- .../uiautomation/qwindowsuiaaccessibility.cpp      |  10 +-
- .../uiautomation/qwindowsuiamainprovider.cpp       |  29 +-
- .../windows/uiautomation/qwindowsuiawrapper.cpp    |  89 +++++
- .../windows/uiautomation/qwindowsuiawrapper_p.h    |  57 +++
- src/plugins/platforms/windows/vxkex.h              | 426 +++++++++++++++++++++
- src/widgets/styles/qwindowsstyle.cpp               |  37 +-
- 30 files changed, 1435 insertions(+), 313 deletions(-)
-
 diff --git a/mkspecs/features/qt.prf b/mkspecs/features/qt.prf
 index 3b71eea6..a1eb2a21 100644
 --- a/mkspecs/features/qt.prf
@@ -44,10 +12,10 @@ index 3b71eea6..a1eb2a21 100644
              plug_name = $$QMAKE_PREFIX_STATICLIB$${plug}$$qtPlatformTargetSuffix($$config_variable).$$QMAKE_EXTENSION_STATICLIB
              plug_path = $$eval(QT_PLUGIN.$${plug}.PATH)
 diff --git a/src/corelib/io/qstandardpaths_win.cpp b/src/corelib/io/qstandardpaths_win.cpp
-index 805ce65a..6ed351d2 100644
+index c6471bf7..4a3621e4 100644
 --- a/src/corelib/io/qstandardpaths_win.cpp
 +++ b/src/corelib/io/qstandardpaths_win.cpp
-@@ -12,6 +12,7 @@
+@@ -13,6 +13,7 @@
  
  #include <qt_windows.h>
  #include <shlobj.h>
@@ -55,7 +23,7 @@ index 805ce65a..6ed351d2 100644
  #include <intshcut.h>
  #include <qvarlengtharray.h>
  
-@@ -60,20 +61,26 @@ static inline void appendTestMode(QString &path)
+@@ -61,20 +62,26 @@ static inline void appendTestMode(QString &path)
  
  static bool isProcessLowIntegrity()
  {
@@ -85,10 +53,10 @@ index 805ce65a..6ed351d2 100644
      // there's no point in checking before dereferencing
      DWORD integrity_level = *GetSidSubAuthority(token_info->Label.Sid, *GetSidSubAuthorityCount(token_info->Label.Sid) - 1);
 diff --git a/src/corelib/kernel/qeventdispatcher_win.cpp b/src/corelib/kernel/qeventdispatcher_win.cpp
-index a7663b24..8459cd5c 100644
+index 30eef9ff..baef1268 100644
 --- a/src/corelib/kernel/qeventdispatcher_win.cpp
 +++ b/src/corelib/kernel/qeventdispatcher_win.cpp
-@@ -360,10 +360,15 @@ void QEventDispatcherWin32Private::registerTimer(WinTimerInfo *t)
+@@ -368,10 +368,15 @@ void QEventDispatcherWin32Private::registerTimer(WinTimerInfo *t)
          ok = t->fastTimerId;
      }
  
@@ -107,10 +75,10 @@ index a7663b24..8459cd5c 100644
          ok = SetTimer(internalHwnd, t->timerId, interval, nullptr);
  
 diff --git a/src/corelib/kernel/qfunctions_win.cpp b/src/corelib/kernel/qfunctions_win.cpp
-index 048fdbc9..e715093d 100644
+index 4c057cdb..f3494054 100644
 --- a/src/corelib/kernel/qfunctions_win.cpp
 +++ b/src/corelib/kernel/qfunctions_win.cpp
-@@ -44,10 +44,17 @@ QComHelper::~QComHelper()
+@@ -61,10 +61,17 @@ void qt_win_ensureComInitializedOnThisThread()
  */
  bool qt_win_hasPackageIdentity()
  {
@@ -129,7 +97,7 @@ index 048fdbc9..e715093d 100644
          case ERROR_INSUFFICIENT_BUFFER:
              return true;
          case APPMODEL_ERROR_NO_PACKAGE:
-@@ -61,6 +68,9 @@ bool qt_win_hasPackageIdentity()
+@@ -78,6 +85,9 @@ bool qt_win_hasPackageIdentity()
  #else
      return false;
  #endif
@@ -140,10 +108,10 @@ index 048fdbc9..e715093d 100644
  
  QT_END_NAMESPACE
 diff --git a/src/corelib/thread/qfutex_p.h b/src/corelib/thread/qfutex_p.h
-index 8ba798f9..f6a8dda6 100644
+index b193811d..d5d1e4b9 100644
 --- a/src/corelib/thread/qfutex_p.h
 +++ b/src/corelib/thread/qfutex_p.h
-@@ -40,8 +40,8 @@ QT_END_NAMESPACE
+@@ -41,8 +41,8 @@ QT_END_NAMESPACE
  #elif defined(Q_OS_LINUX) && !defined(QT_LINUXBASE)
  // use Linux mutexes everywhere except for LSB builds
  #  include "qfutex_linux_p.h"
@@ -155,10 +123,10 @@ index 8ba798f9..f6a8dda6 100644
  QT_BEGIN_NAMESPACE
  namespace QtFutex = QtDummyFutex;
 diff --git a/src/corelib/thread/qmutex.cpp b/src/corelib/thread/qmutex.cpp
-index 1b8f76f1..9e2fe839 100644
+index 719849fa..4e8748f7 100644
 --- a/src/corelib/thread/qmutex.cpp
 +++ b/src/corelib/thread/qmutex.cpp
-@@ -915,6 +915,8 @@ QT_END_NAMESPACE
+@@ -948,6 +948,8 @@ QT_END_NAMESPACE
  // nothing
  #elif defined(Q_OS_DARWIN)
  #  include "qmutex_mac.cpp"
@@ -167,11 +135,24 @@ index 1b8f76f1..9e2fe839 100644
  #else
  #  include "qmutex_unix.cpp"
  #endif
+diff --git a/src/corelib/thread/qmutex.h b/src/corelib/thread/qmutex.h
+index 5753d9fa..f7ad4d44 100644
+--- a/src/corelib/thread/qmutex.h
++++ b/src/corelib/thread/qmutex.h
+@@ -25,7 +25,7 @@ class QT6_ONLY(Q_CORE_EXPORT) QBasicMutex
+     Q_DISABLE_COPY_MOVE(QBasicMutex)
+ protected:
+     static constexpr bool FutexAlwaysAvailable =
+-#if defined(Q_OS_FREEBSD) || defined(Q_OS_LINUX) || defined(Q_OS_WIN) // these platforms use futex
++#if defined(Q_OS_FREEBSD) || defined(Q_OS_LINUX) // these platforms use futex
+             true
+ #else
+             false
 diff --git a/src/corelib/thread/qmutex_p.h b/src/corelib/thread/qmutex_p.h
-index aabb66fa..a16d5082 100644
+index 8a7b4d89..b79a4b35 100644
 --- a/src/corelib/thread/qmutex_p.h
 +++ b/src/corelib/thread/qmutex_p.h
-@@ -86,6 +86,8 @@ public:
+@@ -88,6 +88,8 @@ public:
      semaphore_t mach_semaphore;
  #elif defined(Q_OS_UNIX)
      sem_t semaphore;
@@ -218,11 +199,11 @@ index 00000000..9186f89a
 +QT_END_NAMESPACE
 \ No newline at end of file
 diff --git a/src/corelib/thread/qthread_win.cpp b/src/corelib/thread/qthread_win.cpp
-index 88ba6dc8..c544d972 100644
+index f5a7756f..e12df0de 100644
 --- a/src/corelib/thread/qthread_win.cpp
 +++ b/src/corelib/thread/qthread_win.cpp
-@@ -227,6 +227,62 @@ DWORD WINAPI qt_adopted_thread_watcher_function(LPVOID)
-     return 0;
+@@ -127,6 +127,62 @@ void QAdoptedThread::init()
+     d_func()->handle = GetCurrentThread();
  }
  
 +#ifndef Q_OS_WIN64
@@ -263,9 +244,9 @@ index 88ba6dc8..c544d972 100644
 +{
 +    HMODULE hKernel32 = GetModuleHandleW(L"Kernel32.dll");
 +
-+    SetThreadDescriptionFunc pSetThreadDescription = 
++    SetThreadDescriptionFunc pSetThreadDescription =
 +        reinterpret_cast<SetThreadDescriptionFunc>(GetProcAddress(hKernel32, "SetThreadDescription"));
-+    
++
 +    if (pSetThreadDescription) {
 +        pSetThreadDescription(threadId, reinterpret_cast<const wchar_t *>(name.utf16()) );
 +    }
@@ -284,17 +265,31 @@ index 88ba6dc8..c544d972 100644
  /**************************************************************************
   ** QThreadPrivate
   *************************************************************************/
-@@ -264,7 +320,7 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
+@@ -170,21 +226,7 @@ unsigned int __stdcall QT_ENSURE_STACK_ALIGNED_FOR_SSE QThreadPrivate::start(voi
      QString threadName = std::exchange(thr->d_func()->objectName, {});
      if (Q_LIKELY(threadName.isEmpty()))
          threadName = QString::fromUtf8(thr->metaObject()->className());
+-#ifndef QT_WIN_SERVER_2016_COMPAT
 -    SetThreadDescription(GetCurrentThread(), reinterpret_cast<const wchar_t *>(threadName.utf16()));
+-#else
+-    HMODULE kernelbase = GetModuleHandleW(L"kernelbase.dll");
+-    if (kernelbase != NULL) {
+-        typedef HRESULT (WINAPI *DESCFUNC)(HANDLE, PCWSTR);
+-
+-        DESCFUNC setThreadDescription =
+-            (DESCFUNC)GetProcAddress(kernelbase, "SetThreadDescription");
+-        if (setThreadDescription != NULL) {
+-            setThreadDescription(GetCurrentThread(),
+-                                 reinterpret_cast<const wchar_t *>(threadName.utf16()));
+-        }
+-    }
+-#endif
 +    qt_set_thread_name(GetCurrentThread(), threadName);
  
      emit thr->started(QThread::QPrivateSignal());
      QThread::setTerminationEnabled(true);
 diff --git a/src/gui/rhi/qrhid3d11.cpp b/src/gui/rhi/qrhid3d11.cpp
-index 9e2e0c4e..eae05a0e 100644
+index c69ab7e0..c036a21b 100644
 --- a/src/gui/rhi/qrhid3d11.cpp
 +++ b/src/gui/rhi/qrhid3d11.cpp
 @@ -12,6 +12,8 @@
@@ -334,7 +329,7 @@ index 9e2e0c4e..eae05a0e 100644
      return result;
  }
  
-@@ -5103,6 +5114,15 @@ static const DXGI_FORMAT DEFAULT_SRGB_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+@@ -5258,6 +5269,15 @@ static const DXGI_FORMAT DEFAULT_SRGB_FORMAT = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
  
  bool QD3D11SwapChain::createOrResize()
  {
@@ -350,21 +345,21 @@ index 9e2e0c4e..eae05a0e 100644
      // Can be called multiple times due to window resizes - that is not the
      // same as a simple destroy+create (as with other resources). Just need to
      // resize the buffers then.
-@@ -5427,4 +5447,9 @@ bool QD3D11SwapChain::createOrResize()
-     return true;
+@@ -5610,5 +5630,9 @@ bool RenderTargetUavUpdateState::update(QD3D11RenderTargetData *data, ID3D11Unor
+     return ret;
  }
  
 +bool QD3D11SwapChain::createOrResizeWin7()
 +{
 +    return false; // not implemented yet ;(
 +}
-+
+ 
  QT_END_NAMESPACE
 diff --git a/src/gui/rhi/qrhid3d11_p.h b/src/gui/rhi/qrhid3d11_p.h
-index 44ad7017..7f232f1a 100644
+index 1ea5fdb7..961c6768 100644
 --- a/src/gui/rhi/qrhid3d11_p.h
 +++ b/src/gui/rhi/qrhid3d11_p.h
-@@ -596,6 +596,7 @@ struct QD3D11SwapChain : public QRhiSwapChain
+@@ -640,6 +640,7 @@ struct QD3D11SwapChain : public QRhiSwapChain
  
      QRhiRenderPassDescriptor *newCompatibleRenderPassDescriptor() override;
      bool createOrResize() override;
@@ -373,10 +368,10 @@ index 44ad7017..7f232f1a 100644
      void releaseBuffers();
      bool newColorBuffer(const QSize &size, DXGI_FORMAT format, DXGI_SAMPLE_DESC sampleDesc,
 diff --git a/src/gui/rhi/qrhid3d12.cpp b/src/gui/rhi/qrhid3d12.cpp
-index 0662c53e..1039914d 100644
+index bd793843..fecec52f 100644
 --- a/src/gui/rhi/qrhid3d12.cpp
 +++ b/src/gui/rhi/qrhid3d12.cpp
-@@ -203,19 +203,35 @@ static inline QD3D12RenderTargetData *rtData(QRhiRenderTarget *rt)
+@@ -204,19 +204,35 @@ static inline QD3D12RenderTargetData *rtData(QRhiRenderTarget *rt)
  
  bool QRhiD3D12::create(QRhi::Flags flags)
  {
@@ -414,7 +409,7 @@ index 0662c53e..1039914d 100644
          }
          if (SUCCEEDED(hr)) {
              debugLayer = false;
-@@ -242,7 +258,7 @@ bool QRhiD3D12::create(QRhi::Flags flags)
+@@ -243,7 +259,7 @@ bool QRhiD3D12::create(QRhi::Flags flags)
  
      if (debugLayer) {
          ID3D12Debug1 *debug = nullptr;
@@ -423,7 +418,7 @@ index 0662c53e..1039914d 100644
              qCDebug(QRHI_LOG_INFO, "Enabling D3D12 debug layer");
              debug->EnableDebugLayer();
              debug->Release();
-@@ -310,7 +326,7 @@ bool QRhiD3D12::create(QRhi::Flags flags)
+@@ -315,7 +331,7 @@ bool QRhiD3D12::create(QRhi::Flags flags)
          if (minimumFeatureLevel == 0)
              minimumFeatureLevel = MIN_FEATURE_LEVEL;
  
@@ -432,7 +427,7 @@ index 0662c53e..1039914d 100644
                                 minimumFeatureLevel,
                                 __uuidof(ID3D12Device2),
                                 reinterpret_cast<void **>(&dev));
-@@ -2762,6 +2778,9 @@ QD3D12Descriptor QD3D12SamplerManager::getShaderVisibleDescriptor(const D3D12_SA
+@@ -2976,6 +2992,9 @@ QD3D12Descriptor QD3D12SamplerManager::getShaderVisibleDescriptor(const D3D12_SA
      return descriptor;
  }
  
@@ -442,7 +437,7 @@ index 0662c53e..1039914d 100644
  bool QD3D12MipmapGenerator::create(QRhiD3D12 *rhiD)
  {
      this->rhiD = rhiD;
-@@ -2807,8 +2826,15 @@ bool QD3D12MipmapGenerator::create(QRhiD3D12 *rhiD)
+@@ -3020,8 +3039,15 @@ bool QD3D12MipmapGenerator::create(QRhiD3D12 *rhiD)
      rsDesc.Desc_1_1.NumStaticSamplers = 1;
      rsDesc.Desc_1_1.pStaticSamplers = &samplerDesc;
  
@@ -459,7 +454,7 @@ index 0662c53e..1039914d 100644
      if (FAILED(hr)) {
          qWarning("Failed to serialize root signature: %s", qPrintable(QSystemError::windowsComString(hr)));
          return false;
-@@ -4219,7 +4245,7 @@ bool QD3D12Texture::prepareCreate(QSize *adjustedSize)
+@@ -4669,7 +4695,7 @@ bool QD3D12Texture::prepareCreate(QSize *adjustedSize)
          else
              srvFormat = toD3DTextureFormat(m_readViewFormat.format, m_readViewFormat.srgb ? sRGB : Flags());
      }
@@ -468,7 +463,7 @@ index 0662c53e..1039914d 100644
      mipLevelCount = uint(hasMipMaps ? rhiD->q->mipLevelsForSize(size) : 1);
      sampleDesc = rhiD->effectiveSampleDesc(m_sampleCount, dxgiFormat);
      if (sampleDesc.Count > 1) {
-@@ -5001,6 +5027,9 @@ QD3D12ObjectHandle QD3D12ShaderResourceBindings::createRootSignature(const QD3D1
+@@ -5481,6 +5507,9 @@ QD3D12ObjectHandle QD3D12ShaderResourceBindings::createRootSignature(const QD3D1
  {
      QRHI_RES_RHI(QRhiD3D12);
  
@@ -478,7 +473,7 @@ index 0662c53e..1039914d 100644
      // It's not just that the root signature has to be tied to the pipeline
      // (cannot just freely create it like e.g. with Vulkan where one just
      // creates a descriptor layout 1:1 with the QRhiShaderResourceBindings'
-@@ -5085,7 +5114,7 @@ QD3D12ObjectHandle QD3D12ShaderResourceBindings::createRootSignature(const QD3D1
+@@ -5565,7 +5594,7 @@ QD3D12ObjectHandle QD3D12ShaderResourceBindings::createRootSignature(const QD3D1
      rsDesc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAGS(rsFlags);
  
      ID3DBlob *signature = nullptr;
@@ -488,10 +483,10 @@ index 0662c53e..1039914d 100644
          qWarning("Failed to serialize root signature: %s", qPrintable(QSystemError::windowsComString(hr)));
          return {};
 diff --git a/src/gui/text/windows/qwindowsfontdatabasebase.cpp b/src/gui/text/windows/qwindowsfontdatabasebase.cpp
-index 84e619b0..e751d4b1 100644
+index 055e616d..104cc834 100644
 --- a/src/gui/text/windows/qwindowsfontdatabasebase.cpp
 +++ b/src/gui/text/windows/qwindowsfontdatabasebase.cpp
-@@ -715,7 +715,16 @@ QFont QWindowsFontDatabaseBase::systemDefaultFont()
+@@ -767,7 +767,16 @@ QFont QWindowsFontDatabaseBase::systemDefaultFont()
      // Qt 6: Obtain default GUI font (typically "Segoe UI, 9pt", see QTBUG-58610)
      NONCLIENTMETRICS ncm = {};
      ncm.cbSize = sizeof(ncm);
@@ -510,10 +505,10 @@ index 84e619b0..e751d4b1 100644
      qCDebug(lcQpaFonts) << __FUNCTION__ << systemFont;
      return systemFont;
 diff --git a/src/network/kernel/qdnslookup_win.cpp b/src/network/kernel/qdnslookup_win.cpp
-index 1b07776d..5410edab 100644
+index 60d0f141..19c3a91e 100644
 --- a/src/network/kernel/qdnslookup_win.cpp
 +++ b/src/network/kernel/qdnslookup_win.cpp
-@@ -5,11 +5,9 @@
+@@ -6,11 +6,9 @@
  #include <winsock2.h>
  #include "qdnslookup_p.h"
  
@@ -526,7 +521,7 @@ index 1b07776d..5410edab 100644
  
  #include <qt_windows.h>
  #include <windns.h>
-@@ -65,100 +63,103 @@ DNS_STATUS WINAPI DnsQueryEx(PDNS_QUERY_REQUEST pQueryRequest,
+@@ -66,100 +64,103 @@ DNS_STATUS WINAPI DnsQueryEx(PDNS_QUERY_REQUEST pQueryRequest,
  
  QT_BEGIN_NAMESPACE
  
@@ -717,7 +712,7 @@ index 1b07776d..5410edab 100644
  
      QStringView lastEncodedName;
      QString cachedDecodedName;
-@@ -170,9 +171,9 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
+@@ -171,9 +172,9 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
      auto extractMaybeCachedHost = [&](QStringView name) -> const QString & {
          return lastEncodedName == name ? cachedDecodedName : extractAndCacheHost(name);
      };
@@ -729,7 +724,7 @@ index 1b07776d..5410edab 100644
          // warning: always assign name to the record before calling extractXxxHost() again
          const QString &name = extractMaybeCachedHost(ptr->pName);
          if (ptr->wType == QDnsLookup::A) {
-@@ -224,25 +225,6 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
+@@ -225,25 +226,6 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
              record.d->timeToLive = ptr->dwTtl;
              record.d->weight = ptr->Data.Srv.wWeight;
              reply->serviceRecords.append(record);
@@ -755,7 +750,7 @@ index 1b07776d..5410edab 100644
          } else if (ptr->wType == QDnsLookup::TXT) {
              QDnsTextRecord record;
              record.d->name = name;
-@@ -254,7 +236,7 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
+@@ -255,7 +237,7 @@ void QDnsLookupRunnable::query(QDnsLookupReply *reply)
          }
      }
  
@@ -876,7 +871,7 @@ index 026e81cb..3bbc974b 100644
 +QT_END_NAMESPACE
 \ No newline at end of file
 diff --git a/src/plugins/platforms/windows/qwindowscontext.cpp b/src/plugins/platforms/windows/qwindowscontext.cpp
-index 88e9da55..7df58793 100644
+index 4aa1b886..946dbb45 100644
 --- a/src/plugins/platforms/windows/qwindowscontext.cpp
 +++ b/src/plugins/platforms/windows/qwindowscontext.cpp
 @@ -43,6 +43,7 @@
@@ -896,7 +891,7 @@ index 88e9da55..7df58793 100644
  QT_BEGIN_NAMESPACE
  
  using namespace Qt::StringLiterals;
-@@ -120,6 +123,77 @@ static inline bool sessionManagerInteractionBlocked()
+@@ -121,6 +124,77 @@ static inline bool sessionManagerInteractionBlocked()
  static inline bool sessionManagerInteractionBlocked() { return false; }
  #endif
  
@@ -974,7 +969,7 @@ index 88e9da55..7df58793 100644
  QWindowsContext *QWindowsContext::m_instance = nullptr;
  
  /*!
-@@ -160,6 +234,9 @@ bool QWindowsContextPrivate::m_v2DpiAware = false;
+@@ -161,6 +235,9 @@ bool QWindowsContextPrivate::m_v2DpiAware = false;
  QWindowsContextPrivate::QWindowsContextPrivate()
      : m_oleInitializeResult(OleInitialize(nullptr))
  {
@@ -1111,7 +1106,7 @@ index 88e9da55..7df58793 100644
              const DWORD errorCode = GetLastError();
              qErrnoWarning(int(errorCode), "EnableNonClientDpiScaling() failed for HWND %p (%lu)",
 diff --git a/src/plugins/platforms/windows/qwindowscontext.h b/src/plugins/platforms/windows/qwindowscontext.h
-index 4e9be1af..357f7839 100644
+index 3d9a22ac..5adc9211 100644
 --- a/src/plugins/platforms/windows/qwindowscontext.h
 +++ b/src/plugins/platforms/windows/qwindowscontext.h
 @@ -14,6 +14,7 @@
@@ -1122,7 +1117,7 @@ index 4e9be1af..357f7839 100644
  
  QT_BEGIN_NAMESPACE
  
-@@ -44,6 +45,95 @@ struct QWindowsContextPrivate;
+@@ -45,6 +46,95 @@ struct QWindowsContextPrivate;
  class QPoint;
  class QKeyEvent;
  class QPointingDevice;
@@ -1218,7 +1213,7 @@ index 4e9be1af..357f7839 100644
  class QWindowsContext
  {
      Q_DISABLE_COPY_MOVE(QWindowsContext)
-@@ -134,6 +224,9 @@ public:
+@@ -135,6 +225,9 @@ public:
      QWindowsScreenManager &screenManager();
      QWindowsTabletSupport *tabletSupport() const;
  
@@ -1229,7 +1224,7 @@ index 4e9be1af..357f7839 100644
      void setAsyncExpose(bool value);
  
 diff --git a/src/plugins/platforms/windows/qwindowsdrag.cpp b/src/plugins/platforms/windows/qwindowsdrag.cpp
-index 5d3a47c2..563b22a8 100644
+index ccc7d8f1..bff92e68 100644
 --- a/src/plugins/platforms/windows/qwindowsdrag.cpp
 +++ b/src/plugins/platforms/windows/qwindowsdrag.cpp
 @@ -33,6 +33,8 @@
@@ -1255,10 +1250,10 @@ index 5d3a47c2..563b22a8 100644
  
                  if (pointerInfo.pointerFlags & POINTER_FLAG_PRIMARY) {
 diff --git a/src/plugins/platforms/windows/qwindowsintegration.cpp b/src/plugins/platforms/windows/qwindowsintegration.cpp
-index a9fcf711..3a08bd35 100644
+index 25c15861..ce1284d6 100644
 --- a/src/plugins/platforms/windows/qwindowsintegration.cpp
 +++ b/src/plugins/platforms/windows/qwindowsintegration.cpp
-@@ -140,6 +140,7 @@ static inline unsigned parseOptions(const QStringList &paramList,
+@@ -139,6 +139,7 @@ static inline unsigned parseOptions(const QStringList &paramList,
                                      DarkModeHandling *darkModeHandling)
  {
      unsigned options = 0;
@@ -1266,7 +1261,7 @@ index a9fcf711..3a08bd35 100644
      for (const QString &param : paramList) {
          if (param.startsWith(u"fontengine=")) {
              if (param.endsWith(u"gdi")) {
-@@ -485,7 +486,14 @@ QPlatformFontDatabase *QWindowsIntegration::fontDatabase() const
+@@ -484,7 +485,14 @@ QPlatformFontDatabase *QWindowsIntegration::fontDatabase() const
          else
  #endif // QT_NO_FREETYPE
  #if QT_CONFIG(directwrite3)
@@ -1437,7 +1432,7 @@ index 79957164..fab22b39 100644
  
      const auto systemId = (qint64)penInfo->pointerInfo.sourceDevice;
 diff --git a/src/plugins/platforms/windows/qwindowsscreen.cpp b/src/plugins/platforms/windows/qwindowsscreen.cpp
-index 6c86c47c..24588473 100644
+index eec8f639..54dfa86d 100644
 --- a/src/plugins/platforms/windows/qwindowsscreen.cpp
 +++ b/src/plugins/platforms/windows/qwindowsscreen.cpp
 @@ -32,6 +32,8 @@
@@ -1466,7 +1461,7 @@ index 6c86c47c..24588473 100644
          return QDpi(dpiX, dpiY);
      return {0, 0};
  }
-@@ -609,7 +619,10 @@ bool QWindowsScreen::setOrientationPreference(Qt::ScreenOrientation o)
+@@ -614,7 +624,10 @@ bool QWindowsScreen::setOrientationPreference(Qt::ScreenOrientation o)
          orientationPreference = ORIENTATION_PREFERENCE_LANDSCAPE_FLIPPED;
          break;
      }
@@ -1478,7 +1473,7 @@ index 6c86c47c..24588473 100644
      return result;
  }
  
-@@ -617,7 +630,15 @@ Qt::ScreenOrientation QWindowsScreen::orientationPreference()
+@@ -622,7 +635,15 @@ Qt::ScreenOrientation QWindowsScreen::orientationPreference()
  {
      Qt::ScreenOrientation result = Qt::PrimaryOrientation;
      ORIENTATION_PREFERENCE orientationPreference = ORIENTATION_PREFERENCE_NONE;
@@ -1496,7 +1491,7 @@ index 6c86c47c..24588473 100644
          case ORIENTATION_PREFERENCE_NONE:
              break;
 diff --git a/src/plugins/platforms/windows/qwindowstheme.cpp b/src/plugins/platforms/windows/qwindowstheme.cpp
-index 97b2dd33..2d6dbf36 100644
+index 66043d1b..c234989c 100644
 --- a/src/plugins/platforms/windows/qwindowstheme.cpp
 +++ b/src/plugins/platforms/windows/qwindowstheme.cpp
 @@ -45,6 +45,8 @@
@@ -1508,7 +1503,7 @@ index 97b2dd33..2d6dbf36 100644
  #if QT_CONFIG(cpp_winrt)
  #   include <QtCore/private/qt_winrtbase_p.h>
  
-@@ -97,36 +99,52 @@ static constexpr QColor getSysColor(winrt::Windows::UI::Color &&color)
+@@ -103,46 +105,60 @@ static inline QColor getSysColor(int index)
  
  [[maybe_unused]] [[nodiscard]] static inline QColor qt_accentColor(AccentColorLevel level)
  {
@@ -1531,24 +1526,23 @@ index 97b2dd33..2d6dbf36 100644
 -    const QColor accentDarker = getSysColor(settings.GetColorValue(UIColorType::AccentDark2));
 -    const QColor accentDarkest = getSysColor(settings.GetColorValue(UIColorType::AccentDark3));
 -#else
--    const QWinRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
--    if (!registry.isValid())
--        return {};
--    const QVariant value = registry.value(L"AccentColor");
--    if (!value.isValid())
--        return {};
--    // The retrieved value is in the #AABBGGRR format, we need to
--    // convert it to the #AARRGGBB format which Qt expects.
--    const QColor abgr = QColor::fromRgba(qvariant_cast<DWORD>(value));
--    if (!abgr.isValid())
--        return {};
--    const QColor accent = QColor::fromRgb(abgr.blue(), abgr.green(), abgr.red(), abgr.alpha());
--    const QColor accentLight = accent.lighter(120);
--    const QColor accentLighter = accentLight.lighter(120);
--    const QColor accentLightest = accentLighter.lighter(120);
--    const QColor accentDark = accent.darker(120);
--    const QColor accentDarker = accentDark.darker(120);
--    const QColor accentDarkest = accentDarker.darker(120);
+-    const QColor accent = []()->QColor {
+-        // MS uses the aquatic contrast theme as an example in the URL below:
+-        // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor#windows-1011-system-colors
+-        if (QWindowsTheme::queryHighContrast())
+-            return getSysColor(COLOR_HIGHLIGHT);
+-        const QWinRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
+-        if (!registry.isValid())
+-            return {};
+-        const QVariant value = registry.value(L"AccentColor");
+-        if (!value.isValid())
+-            return {};
+-        // The retrieved value is in the #AABBGGRR format, we need to
+-        // convert it to the #AARRGGBB format which Qt expects.
+-        const QColor abgr = QColor::fromRgba(qvariant_cast<DWORD>(value));
+-        if (!abgr.isValid())
+-            return {};
+-        return QColor::fromRgb(abgr.blue(), abgr.green(), abgr.red(), abgr.alpha());
 +    if (QOperatingSystemVersion::current() >= QOperatingSystemVersion::Windows10)
 +    {
 +        using namespace winrt::Windows::UI::ViewManagement;
@@ -1561,26 +1555,44 @@ index 97b2dd33..2d6dbf36 100644
 +        accentDarker = getSysColor(settings.GetColorValue(UIColorType::AccentDark2));
 +        accentDarkest = getSysColor(settings.GetColorValue(UIColorType::AccentDark3));
 +    }
- #endif
-+
-+    if (!accent.isValid())
++#endif
+ 
+-    }();
+     if (!accent.isValid())
+-        return {};
+-
+-    const QColor accentLight = accent.lighter(120);
+-    const QColor accentLighter = accentLight.lighter(120);
+-    const QColor accentLightest = accentLighter.lighter(120);
+-    const QColor accentDark = accent.darker(120);
+-    const QColor accentDarker = accentDark.darker(120);
+-    const QColor accentDarkest = accentDarker.darker(120);
+-#endif
 +    {
-+        const QWinRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
-+        if (!registry.isValid())
++        const QColor accentFromRegistry = []()->QColor {
++            // MS uses the aquatic contrast theme as an example in the URL below:
++            // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor#windows-1011-system-colors
++            if (QWindowsTheme::queryHighContrast())
++                return getSysColor(COLOR_HIGHLIGHT);
++            const QWinRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
++            if (!registry.isValid())
++                return {};
++            const QVariant value = registry.value(L"AccentColor");
++            if (!value.isValid())
++                return {};
++            // The retrieved value is in the #AABBGGRR format, we need to
++            // convert it to the #AARRGGBB format which Qt expects.
++            const QColor abgr = QColor::fromRgba(qvariant_cast<DWORD>(value));
++            if (!abgr.isValid())
++                return {};
++            return QColor::fromRgb(abgr.blue(), abgr.green(), abgr.red(), abgr.alpha());
++        }();
++        if (!accentFromRegistry.isValid())
 +            return {};
-+        const QVariant value = registry.value(L"AccentColor");
-+        if (!value.isValid())
-+            return {};
-+        // The retrieved value is in the #AABBGGRR format, we need to
-+        // convert it to the #AARRGGBB format which Qt expects.
-+        const QColor abgr = QColor::fromRgba(qvariant_cast<DWORD>(value));
-+        if (!abgr.isValid())
-+            return {};
-+        accent = QColor::fromRgb(abgr.blue(), abgr.green(), abgr.red(), abgr.alpha());
++        accent = accentFromRegistry;
 +        accentLight = accent.lighter(120);
 +        accentLighter = accentLight.lighter(120);
 +        accentLightest = accentLighter.lighter(120);
-+        accentDarkest = accent.darker(120 * 120 * 120);
 +        accentDark = accent.darker(120);
 +        accentDarker = accentDark.darker(120);
 +        accentDarkest = accentDarker.darker(120);
@@ -1589,7 +1601,7 @@ index 97b2dd33..2d6dbf36 100644
      switch (level) {
      case AccentColorDarkest:
          return accentDarkest;
-@@ -154,6 +172,7 @@ static inline QColor getSysColor(int index)
+@@ -164,6 +180,7 @@ static inline QColor getSysColor(int index)
  // QTBUG-48823/Windows 10: SHGetFileInfo() (as called by item views on file system
  // models has been observed to trigger a WM_PAINT on the mainwindow. Suppress the
  // behavior by running it in a thread.
@@ -1597,7 +1609,7 @@ index 97b2dd33..2d6dbf36 100644
  class QShGetFileInfoThread : public QThread
  {
  public:
-@@ -326,46 +345,45 @@ void QWindowsTheme::populateLightSystemBasePalette(QPalette &result)
+@@ -342,46 +359,45 @@ void QWindowsTheme::populateLightSystemBasePalette(QPalette &result)
  
  void QWindowsTheme::populateDarkSystemBasePalette(QPalette &result)
  {
@@ -1680,7 +1692,7 @@ index 97b2dd33..2d6dbf36 100644
      const QColor linkColor = accentLightest;
      const QColor buttonColor = background.lighter(200);
  
-@@ -738,7 +756,10 @@ void QWindowsTheme::refreshFonts()
+@@ -824,7 +840,10 @@ void QWindowsTheme::refreshFonts()
      fixedFont.setStyleHint(QFont::TypeWriter);
  
      LOGFONT lfIconTitleFont;
@@ -1692,7 +1704,7 @@ index 97b2dd33..2d6dbf36 100644
      const QFont iconTitleFont = QWindowsFontDatabase::LOGFONT_to_QFont(lfIconTitleFont, dpi);
  
      m_fonts[SystemFont] = new QFont(QWindowsFontDatabase::systemDefaultFont());
-@@ -1001,6 +1022,7 @@ public:
+@@ -1081,6 +1100,7 @@ public:
  static QPixmap pixmapFromShellImageList(int iImageList, int iIcon)
  {
      QPixmap result;
@@ -1700,7 +1712,7 @@ index 97b2dd33..2d6dbf36 100644
      // For MinGW:
      static const IID iID_IImageList = {0x46eb5926, 0x582e, 0x4017, {0x9f, 0xdf, 0xe8, 0x99, 0x8d, 0xaa, 0x9, 0x50}};
  
-@@ -1015,6 +1037,7 @@ static QPixmap pixmapFromShellImageList(int iImageList, int iIcon)
+@@ -1095,6 +1115,7 @@ static QPixmap pixmapFromShellImageList(int iImageList, int iIcon)
          DestroyIcon(hIcon);
      }
      imageList->Release();
@@ -1709,19 +1721,19 @@ index 97b2dd33..2d6dbf36 100644
  }
  
 diff --git a/src/plugins/platforms/windows/qwindowswindow.cpp b/src/plugins/platforms/windows/qwindowswindow.cpp
-index f44a28f5..6d6409c7 100644
+index 0ef91ba6..6a855a17 100644
 --- a/src/plugins/platforms/windows/qwindowswindow.cpp
 +++ b/src/plugins/platforms/windows/qwindowswindow.cpp
-@@ -46,6 +46,8 @@
+@@ -51,6 +51,8 @@
  
  #include <shellscalingapi.h>
  
 +#include "vxkex.h"
 +
- QT_BEGIN_NAMESPACE
+ #include <private/qdxgivsyncservice_p.h>
  
- using QWindowCreationContextPtr = QSharedPointer<QWindowCreationContext>;
-@@ -522,11 +524,15 @@ static inline void updateGLWindowSettings(const QWindow *w, HWND hwnd, Qt::Windo
+ #ifndef GWL_HWNDPARENT
+@@ -523,11 +525,15 @@ static void setWindowOpacity(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, bo
  
  [[nodiscard]] static inline int getResizeBorderThickness(const UINT dpi)
  {
@@ -1742,7 +1754,7 @@ index f44a28f5..6d6409c7 100644
  }
  
  /*!
-@@ -538,11 +544,21 @@ static QMargins invisibleMargins(QPoint screenPoint)
+@@ -539,11 +545,21 @@ static QMargins invisibleMargins(QPoint screenPoint)
  {
      POINT pt = {screenPoint.x(), screenPoint.y()};
      if (HMONITOR hMonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL)) {
@@ -1769,7 +1781,7 @@ index f44a28f5..6d6409c7 100644
          }
      }
      return QMargins();
-@@ -550,7 +566,8 @@ static QMargins invisibleMargins(QPoint screenPoint)
+@@ -551,7 +567,8 @@ static QMargins invisibleMargins(QPoint screenPoint)
  
  [[nodiscard]] static inline QMargins invisibleMargins(const HWND hwnd)
  {
@@ -1779,7 +1791,7 @@ index f44a28f5..6d6409c7 100644
      const int gap = getResizeBorderThickness(dpi);
      return QMargins(gap, 0, gap, gap);
  }
-@@ -851,7 +868,7 @@ static inline bool shouldApplyDarkFrame(const QWindow *w)
+@@ -856,7 +873,7 @@ static inline bool shouldApplyDarkFrame(const QWindow *w)
  {
      if (!w->isTopLevel() || w->flags().testFlag(Qt::FramelessWindowHint))
          return false;
@@ -1788,7 +1800,7 @@ index f44a28f5..6d6409c7 100644
      // the user of the application has explicitly opted out of dark frames
      if (!QWindowsIntegration::instance()->darkModeHandling().testFlag(QWindowsApplication::DarkModeWindowFrames))
          return false;
-@@ -1071,9 +1088,17 @@ QMargins QWindowsGeometryHint::frame(const QWindow *w, DWORD style, DWORD exStyl
+@@ -1106,9 +1123,17 @@ QMargins QWindowsGeometryHint::frame(const QWindow *w, DWORD style, DWORD exStyl
          return {};
      RECT rect = {0,0,0,0};
      style &= ~DWORD(WS_OVERLAPPED); // Not permitted, see docs.
@@ -1798,17 +1810,17 @@ index f44a28f5..6d6409c7 100644
 +    {
 +        if (QWindowsContext::user32dll.adjustWindowRectExForDpi(&rect, style, FALSE, exStyle, unsigned(qRound(dpi))) == FALSE) 
 +            qErrnoWarning("%s: AdjustWindowRectExForDpi failed", __FUNCTION__);
-+    }
+     }
 +    else
 +    {
 +        if (vxkex::AdjustWindowRectExForDpi(&rect, style, FALSE, exStyle, unsigned(qRound(dpi))) == FALSE) 
 +            qErrnoWarning("%s: vxkex::AdjustWindowRectExForDpi failed", __FUNCTION__);
-     }
++    }
 +
      const QMargins result(qAbs(rect.left), qAbs(rect.top),
                            qAbs(rect.right), qAbs(rect.bottom));
      qCDebug(lcQpaWindow).nospace() << __FUNCTION__ << " style="
-@@ -1380,7 +1405,7 @@ void QWindowsForeignWindow::setParent(const QPlatformWindow *newParentWindow)
+@@ -1456,7 +1481,7 @@ void QWindowsForeignWindow::setParent(const QPlatformWindow *newParentWindow)
      qCDebug(lcQpaWindow) << __FUNCTION__ << window() << "newParent="
          << newParentWindow << newParent << "oldStyle=" << debugWinStyle(oldStyle);
  
@@ -1817,7 +1829,7 @@ index f44a28f5..6d6409c7 100644
          // Top level window flags need to be set/cleared manually.
          DWORD newStyle = oldStyle;
          if (isTopLevel) {
-@@ -1588,7 +1613,8 @@ void QWindowsWindow::initialize()
+@@ -1672,7 +1697,8 @@ void QWindowsWindow::initialize()
              QWindowSystemInterface::handleGeometryChange<QWindowSystemInterface::SynchronousDelivery>(w, obtainedGeometry);
          }
      }
@@ -1827,7 +1839,7 @@ index f44a28f5..6d6409c7 100644
  }
  
  QSurfaceFormat QWindowsWindow::format() const
-@@ -2083,7 +2109,7 @@ void QWindowsWindow::handleDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam)
+@@ -2164,7 +2190,7 @@ void QWindowsWindow::handleDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam)
  
  void QWindowsWindow::handleDpiChangedAfterParent(HWND hwnd)
  {
@@ -1836,7 +1848,7 @@ index f44a28f5..6d6409c7 100644
      const qreal scale = dpiRelativeScale(dpi);
      setSavedDpi(dpi);
  
-@@ -2177,6 +2203,7 @@ void QWindowsWindow::setGeometry(const QRect &rectIn)
+@@ -2268,6 +2294,7 @@ void QWindowsWindow::setGeometry(const QRect &rectIn)
      }
      if (m_windowState & Qt::WindowMinimized)
          m_data.geometry = rect; // Otherwise set by handleGeometryChange() triggered by event.
@@ -1845,7 +1857,7 @@ index f44a28f5..6d6409c7 100644
          // A ResizeEvent with resulting geometry will be sent. If we cannot
          // achieve that size (for example, window title minimal constraint),
 diff --git a/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp b/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp
-index 638d684c..1c89fd87 100644
+index 7a9454b2..f0e40d8f 100644
 --- a/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp
 +++ b/src/plugins/platforms/windows/uiautomation/qwindowsuiaaccessibility.cpp
 @@ -15,6 +15,8 @@
@@ -1881,7 +1893,7 @@ index 638d684c..1c89fd87 100644
  
      switch (event->type()) {
 diff --git a/src/plugins/platforms/windows/uiautomation/qwindowsuiamainprovider.cpp b/src/plugins/platforms/windows/uiautomation/qwindowsuiamainprovider.cpp
-index f01c594b..02e853da 100644
+index c3fe9c20..4a08abf9 100644
 --- a/src/plugins/platforms/windows/uiautomation/qwindowsuiamainprovider.cpp
 +++ b/src/plugins/platforms/windows/uiautomation/qwindowsuiamainprovider.cpp
 @@ -21,6 +21,7 @@
@@ -1983,16 +1995,32 @@ index f01c594b..02e853da 100644
                  }
              }
          }
-@@ -212,7 +213,7 @@ void QWindowsUiaMainProvider::raiseNotification(QAccessibleAnnouncementEvent *ev
+@@ -212,23 +213,8 @@ void QWindowsUiaMainProvider::raiseNotification(QAccessibleAnnouncementEvent *ev
                      ? NotificationProcessing_ImportantAll
                      : NotificationProcessing_All;
              QBStr activityId{ QString::fromLatin1("") };
+-#if !defined(Q_CC_MSVC) || !defined(QT_WIN_SERVER_2016_COMPAT)
 -            UiaRaiseNotificationEvent(provider.Get(), NotificationKind_Other, processing, message.bstr(),
 +            QWindowsUiaWrapper::instance()->raiseNotificationEvent(provider.Get(), NotificationKind_Other, processing, message.bstr(),
                                        activityId.bstr());
- 
+-#else
+-            HMODULE uiautomationcore = GetModuleHandleW(L"UIAutomationCore.dll");
+-            if (uiautomationcore != NULL) {
+-                typedef HRESULT (WINAPI *EVENTFUNC)(IRawElementProviderSimple *, NotificationKind,
+-                                                    NotificationProcessing, BSTR, BSTR);
+-
+-                EVENTFUNC uiaRaiseNotificationEvent =
+-                    (EVENTFUNC)GetProcAddress(uiautomationcore, "UiaRaiseNotificationEvent");
+-                if (uiaRaiseNotificationEvent != NULL) {
+-                    uiaRaiseNotificationEvent(provider.Get(), NotificationKind_Other, processing,
+-                                              message.bstr(), activityId.bstr());
+-                }
+-            }
+-#endif
          }
-@@ -615,7 +616,7 @@ HRESULT QWindowsUiaMainProvider::get_HostRawElementProvider(IRawElementProviderS
+     }
+ }
+@@ -679,7 +665,7 @@ HRESULT QWindowsUiaMainProvider::get_HostRawElementProvider(IRawElementProviderS
      // Returns a host provider only for controls associated with a native window handle. Others should return NULL.
      if (QAccessibleInterface *accessible = accessibleInterface()) {
          if (HWND hwnd = hwndForAccessible(accessible)) {
@@ -2592,10 +2620,10 @@ index 00000000..6bbf2209
 +
 +} // namespace vxkex
 diff --git a/src/widgets/styles/qwindowsstyle.cpp b/src/widgets/styles/qwindowsstyle.cpp
-index a8407add..a8097330 100644
+index bab923db..fc693869 100644
 --- a/src/widgets/styles/qwindowsstyle.cpp
 +++ b/src/widgets/styles/qwindowsstyle.cpp
-@@ -59,6 +59,10 @@
+@@ -60,6 +60,10 @@
  
  #include <algorithm>
  
