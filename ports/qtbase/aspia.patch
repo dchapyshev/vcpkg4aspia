@@ -2041,7 +2041,20 @@ diff --git a/src/plugins/platforms/windows/qwindowsintegration.cpp b/src/plugins
 index 25c15861..837027df 100644
 --- a/src/plugins/platforms/windows/qwindowsintegration.cpp
 +++ b/src/plugins/platforms/windows/qwindowsintegration.cpp
-@@ -484,7 +484,13 @@ QPlatformFontDatabase *QWindowsIntegration::fontDatabase() const
+@@ -140,6 +140,12 @@ static inline unsigned parseOptions(const QStringList &paramList,
+                                     DarkModeHandling *darkModeHandling)
+ {
+     unsigned options = 0;
++
++    if (QOperatingSystemVersion::current() < QOperatingSystemVersion(QOperatingSystemVersion::Windows, 10, 0, 17763)) {
++        // https://github.com/crystalidea/qt6windows7/issues/26
++        options |= QWindowsIntegration::DontUseDirectWriteFonts;
++    }
++
+     for (const QString &param : paramList) {
+         if (param.startsWith(u"fontengine=")) {
+             if (param.endsWith(u"gdi")) {
+@@ -484,7 +490,13 @@ QPlatformFontDatabase *QWindowsIntegration::fontDatabase() const
          else
  #endif // QT_NO_FREETYPE
  #if QT_CONFIG(directwrite3)
