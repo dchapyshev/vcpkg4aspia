@@ -639,6 +639,12 @@
     "xcb": {
       "description": "XCB",
       "dependencies": [
+        "xcb-image",
+        "xcb-keysyms",
+        "xcb-render-util",
+        "xcb-util",
+        "xcb-util-cursor",
+        "xcb-util-wm",
         {
           "name": "qtbase",
           "default-features": false,
