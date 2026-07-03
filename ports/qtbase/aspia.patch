@@ -1651,13 +1651,13 @@ index 026e81cb..df85914a 100644
      if (FAILED(hr))
          return false;
 diff --git a/src/plugins/platforms/windows/qwindowscontext.cpp b/src/plugins/platforms/windows/qwindowscontext.cpp
-index 4aa1b886..c4d86447 100644
+index d14f92e..57420ac 100644
 --- a/src/plugins/platforms/windows/qwindowscontext.cpp
 +++ b/src/plugins/platforms/windows/qwindowscontext.cpp
 @@ -43,11 +43,13 @@
  #include <QtCore/qsysinfo.h>
  #include <QtCore/qscopedpointer.h>
- #include <QtCore/quuid.h>
+ #include <QtCore/qscopeguard.h>
 +#include <QtCore/private/qsystemlibrary_p.h>
  #include <QtCore/private/qwinregistry_p.h>
  #if QT_CONFIG(cpp_winrt)
@@ -1665,10 +1665,10 @@ index 4aa1b886..c4d86447 100644
  #endif
  #include <QtCore/private/qsystemerror_p.h>
 +#include <QtCore/private/qlegacyshims_win_p.h>
+ #include <QtCore/private/quniquehandle_types_windows_p.h>
  
  #include <QtGui/private/qwindowsguieventdispatcher_p.h>
- #include <QtGui/private/qwindowsthemecache_p.h>
-@@ -121,6 +123,140 @@ static inline bool sessionManagerInteractionBlocked()
+@@ -122,6 +124,140 @@ static inline bool sessionManagerInteractionBlocked()
  static inline bool sessionManagerInteractionBlocked() { return false; }
  #endif
  
@@ -1809,7 +1809,7 @@ index 4aa1b886..c4d86447 100644
  QWindowsContext *QWindowsContext::m_instance = nullptr;
  
  /*!
-@@ -161,6 +297,9 @@ bool QWindowsContextPrivate::m_v2DpiAware = false;
+@@ -162,6 +298,9 @@ bool QWindowsContextPrivate::m_v2DpiAware = false;
  QWindowsContextPrivate::QWindowsContextPrivate()
      : m_oleInitializeResult(OleInitialize(nullptr))
  {
@@ -1818,8 +1818,8 @@ index 4aa1b886..c4d86447 100644
 +
      if (m_pointerHandler.touchDevice())
          m_systemInfo |= QWindowsContext::SI_SupportsTouch;
-     m_displayContext = GetDC(nullptr);
-@@ -339,26 +478,28 @@ void QWindowsContext::setDetectAltGrModifier(bool a)
+     m_displayContext.reset(GetDC(nullptr));
+@@ -334,26 +473,28 @@ void QWindowsContext::setDetectAltGrModifier(bool a)
      dpiAwarenessContextToQtDpiAwareness(DPI_AWARENESS_CONTEXT context)
  {
      // IsValidDpiAwarenessContext() will handle the NULL pointer case.
@@ -1861,7 +1861,7 @@ index 4aa1b886..c4d86447 100644
      return dpiAwarenessContextToQtDpiAwareness(context);
  }
  
-@@ -371,7 +512,9 @@ QtWindows::DpiAwareness QWindowsContext::processDpiAwareness()
+@@ -366,7 +507,9 @@ QtWindows::DpiAwareness QWindowsContext::processDpiAwareness()
      // return the default DPI_AWARENESS_CONTEXT for the process if
      // SetThreadDpiAwarenessContext() was never called. So we can use
      // it as an equivalent.
@@ -1872,7 +1872,7 @@ index 4aa1b886..c4d86447 100644
      return dpiAwarenessContextToQtDpiAwareness(context);
  }
  
-@@ -431,11 +574,11 @@ bool QWindowsContext::setProcessDpiAwareness(QtWindows::DpiAwareness dpiAwarenes
+@@ -430,11 +573,11 @@ bool QWindowsContext::setProcessDpiAwareness(QtWindows::DpiAwareness dpiAwarenes
      if (processDpiAwareness() == dpiAwareness)
          return true;
      const auto context = qtDpiAwarenessToDpiAwarenessContext(dpiAwareness);
@@ -1886,7 +1886,7 @@ index 4aa1b886..c4d86447 100644
          qCWarning(lcQpaWindow).noquote().nospace()
              << "SetProcessDpiAwarenessContext() failed: "
              << QSystemError::windowsString()
-@@ -868,8 +1011,8 @@ void QWindowsContext::forceNcCalcSize(HWND hwnd)
+@@ -715,8 +858,8 @@ void QWindowsContext::forceNcCalcSize(HWND hwnd)
  bool QWindowsContext::systemParametersInfo(unsigned action, unsigned param, void *out,
                                             unsigned dpi)
  {
@@ -1897,7 +1897,7 @@ index 4aa1b886..c4d86447 100644
          : SystemParametersInfo(action, param, out, 0);
      return result == TRUE;
  }
-@@ -957,7 +1100,7 @@ static bool enableNonClientDpiScaling(HWND hwnd)
+@@ -804,7 +947,7 @@ static bool enableNonClientDpiScaling(HWND hwnd)
  {
      bool result = false;
      if (QWindowsContext::windowDpiAwareness(hwnd) == QtWindows::DpiAwareness::PerMonitor) {
@@ -2203,10 +2203,10 @@ index 0a4a0db7..ac7dc13a 100644
          case ORIENTATION_PREFERENCE_NONE:
              break;
 diff --git a/src/plugins/platforms/windows/qwindowstheme.cpp b/src/plugins/platforms/windows/qwindowstheme.cpp
-index 9059f592..12ae5be6 100644
+index ab3d5c7..77ba787 100644
 --- a/src/plugins/platforms/windows/qwindowstheme.cpp
 +++ b/src/plugins/platforms/windows/qwindowstheme.cpp
-@@ -18,6 +18,7 @@
+@@ -20,6 +20,7 @@
  #include <objbase.h>
  #include <commoncontrols.h>
  #include <shellapi.h>
@@ -2214,92 +2214,7 @@ index 9059f592..12ae5be6 100644
  
  #include <QtCore/qapplicationstatic.h>
  #include <QtCore/qvariant.h>
-@@ -103,18 +104,55 @@ static inline QColor getSysColor(int index)
- 
- [[maybe_unused]] [[nodiscard]] static inline QColor qt_accentColor(AccentColorLevel level)
- {
-+    QColor accent;
-+    QColor accentLight;
-+    QColor accentLighter;
-+    QColor accentLightest;
-+    QColor accentDark;
-+    QColor accentDarker;
-+    QColor accentDarkest;
- #if QT_CONFIG(cpp_winrt)
--    using namespace winrt::Windows::UI::ViewManagement;
--    const auto settings = UISettings();
--    const QColor accent = getSysColor(settings.GetColorValue(UIColorType::Accent));
--    const QColor accentLight = getSysColor(settings.GetColorValue(UIColorType::AccentLight1));
--    const QColor accentLighter = getSysColor(settings.GetColorValue(UIColorType::AccentLight2));
--    const QColor accentLightest = getSysColor(settings.GetColorValue(UIColorType::AccentLight3));
--    const QColor accentDark = getSysColor(settings.GetColorValue(UIColorType::AccentDark1));
--    const QColor accentDarker = getSysColor(settings.GetColorValue(UIColorType::AccentDark2));
--    const QColor accentDarkest = getSysColor(settings.GetColorValue(UIColorType::AccentDark3));
-+    if (IsWindows10OrGreater()) {
-+        using namespace winrt::Windows::UI::ViewManagement;
-+        const auto settings = UISettings();
-+        accent = getSysColor(settings.GetColorValue(UIColorType::Accent));
-+        accentLight = getSysColor(settings.GetColorValue(UIColorType::AccentLight1));
-+        accentLighter = getSysColor(settings.GetColorValue(UIColorType::AccentLight2));
-+        accentLightest = getSysColor(settings.GetColorValue(UIColorType::AccentLight3));
-+        accentDark = getSysColor(settings.GetColorValue(UIColorType::AccentDark1));
-+        accentDarker = getSysColor(settings.GetColorValue(UIColorType::AccentDark2));
-+        accentDarkest = getSysColor(settings.GetColorValue(UIColorType::AccentDark3));
-+   } else {
-+       accent = []()->QColor {
-+            // MS uses the aquatic contrast theme as an example in the URL below:
-+            // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor#windows-1011-system-colors
-+            if (QWindowsTheme::queryHighContrast())
-+                return getSysColor(COLOR_HIGHLIGHT);
-+            const QWinRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
-+            if (!registry.isValid())
-+                return {};
-+            const QVariant value = registry.value(L"AccentColor");
-+            if (!value.isValid())
-+                return {};
-+            // The retrieved value is in the #AABBGGRR format, we need to
-+            // convert it to the #AARRGGBB format which Qt expects.
-+            const QColor abgr = QColor::fromRgba(qvariant_cast<DWORD>(value));
-+            if (!abgr.isValid())
-+                return {};
-+            return QColor::fromRgb(abgr.blue(), abgr.green(), abgr.red(), abgr.alpha());
-+        }();
-+        if (!accent.isValid())
-+            return {};
-+
-+        accentLight = accent.lighter(120);
-+        accentLighter = accentLight.lighter(120);
-+        accentLightest = accentLighter.lighter(120);
-+        accentDark = accent.darker(120);
-+        accentDarker = accentDark.darker(120);
-+        accentDarkest = accentDarker.darker(120);
-+   }
- #else
--    const QColor accent = []()->QColor {
-+    accent = []()->QColor {
-         // MS uses the aquatic contrast theme as an example in the URL below:
-         // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getsyscolor#windows-1011-system-colors
-         if (QWindowsTheme::queryHighContrast())
-@@ -136,12 +174,12 @@ static inline QColor getSysColor(int index)
-     if (!accent.isValid())
-         return {};
- 
--    const QColor accentLight = accent.lighter(120);
--    const QColor accentLighter = accentLight.lighter(120);
--    const QColor accentLightest = accentLighter.lighter(120);
--    const QColor accentDark = accent.darker(120);
--    const QColor accentDarker = accentDark.darker(120);
--    const QColor accentDarkest = accentDarker.darker(120);
-+    accentLight = accent.lighter(120);
-+    accentLighter = accentLight.lighter(120);
-+    accentLightest = accentLighter.lighter(120);
-+    accentDark = accent.darker(120);
-+    accentDarker = accentDark.darker(120);
-+    accentDarkest = accentDarker.darker(120);
- #endif
-     switch (level) {
-     case AccentColorDarkest:
-@@ -309,7 +347,10 @@ void QWindowsTheme::populateLightSystemBasePalette(QPalette &result)
+@@ -323,7 +324,10 @@ void QWindowsTheme::populateLightSystemBasePalette(QPalette &result)
      const QColor btnFace = background;
      const QColor btnHighlight = getSysColor(COLOR_BTNHIGHLIGHT);
  
@@ -2311,7 +2226,7 @@ index 9059f592..12ae5be6 100644
      result.setColor(QPalette::WindowText, getSysColor(COLOR_WINDOWTEXT));
      result.setColor(QPalette::Button, btnFace);
      result.setColor(QPalette::Light, btnHighlight);
-@@ -821,7 +862,10 @@ void QWindowsTheme::refreshFonts()
+@@ -831,7 +835,10 @@ void QWindowsTheme::refreshFonts()
      fixedFont.setStyleHint(QFont::TypeWriter);
  
      LOGFONT lfIconTitleFont;
@@ -2324,10 +2239,10 @@ index 9059f592..12ae5be6 100644
  
      m_fonts[SystemFont] = new QFont(QWindowsFontDatabase::systemDefaultFont());
 diff --git a/src/plugins/platforms/windows/qwindowswindow.cpp b/src/plugins/platforms/windows/qwindowswindow.cpp
-index 731673b6..bf6840cf 100644
+index 1d86c40..7148725 100644
 --- a/src/plugins/platforms/windows/qwindowswindow.cpp
 +++ b/src/plugins/platforms/windows/qwindowswindow.cpp
-@@ -525,8 +525,12 @@ static void setWindowOpacity(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, bo
+@@ -529,8 +529,12 @@ static void setWindowOpacity(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, bo
      // The width of the padded border will always be 0 if DWM composition is
      // disabled, but since it will always be enabled and can't be programtically
      // disabled from Windows 8, we are safe to go.
@@ -2342,7 +2257,7 @@ index 731673b6..bf6840cf 100644
  }
  
  /*!
-@@ -540,9 +544,12 @@ static QMargins invisibleMargins(QPoint screenPoint)
+@@ -544,9 +548,12 @@ static QMargins invisibleMargins(QPoint screenPoint)
      if (HMONITOR hMonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL)) {
          UINT dpiX;
          UINT dpiY;
@@ -2356,7 +2271,7 @@ index 731673b6..bf6840cf 100644
          }
      }
      return QMargins();
-@@ -550,7 +557,7 @@ static QMargins invisibleMargins(QPoint screenPoint)
+@@ -554,7 +561,7 @@ static QMargins invisibleMargins(QPoint screenPoint)
  
  [[nodiscard]] static inline QMargins invisibleMargins(const HWND hwnd)
  {
@@ -2365,7 +2280,7 @@ index 731673b6..bf6840cf 100644
      const int gap = getResizeBorderThickness(dpi);
      return QMargins(gap, 0, gap, gap);
  }
-@@ -871,7 +878,7 @@ static inline int getTitleBarHeight_sys(const UINT dpi)
+@@ -875,7 +882,7 @@ static inline int getTitleBarHeight_sys(const UINT dpi)
  {
      // According to MS design manual, it should be 32px when DPI is 96.
      return getResizeBorderThickness(dpi) +
@@ -2374,7 +2289,7 @@ index 731673b6..bf6840cf 100644
  }
  
  QWindowsWindowData
-@@ -936,7 +943,7 @@ QWindowsWindowData
+@@ -945,7 +952,7 @@ QWindowsWindowData
                                   context->frameWidth, context->frameHeight,
                                   parentHandle, nullptr, appinst, nullptr);
  
@@ -2383,7 +2298,7 @@ index 731673b6..bf6840cf 100644
      const int titleBarHeight = getTitleBarHeight_sys(dpi);
      result.hwndTitlebar = CreateWindowEx(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
                                           classTitleBarNameUtf16, classTitleBarNameUtf16,
-@@ -1104,7 +1111,7 @@ QMargins QWindowsGeometryHint::frame(const QWindow *w, DWORD style, DWORD exStyl
+@@ -1113,7 +1120,7 @@ QMargins QWindowsGeometryHint::frame(const QWindow *w, DWORD style, DWORD exStyl
          return {};
      RECT rect = {0,0,0,0};
      style &= ~DWORD(WS_OVERLAPPED); // Not permitted, see docs.
@@ -2392,9 +2307,9 @@ index 731673b6..bf6840cf 100644
          qErrnoWarning("%s: AdjustWindowRectExForDpi failed", __FUNCTION__);
      }
      const QMargins result(qAbs(rect.left), qAbs(rect.top),
-@@ -1670,7 +1677,10 @@ void QWindowsWindow::initialize()
-             QWindowSystemInterface::handleGeometryChange<QWindowSystemInterface::SynchronousDelivery>(w, obtainedGeometry);
-         }
+@@ -1674,7 +1681,10 @@ void QWindowsWindow::initialize()
+         && creationContext->requestedGeometryIn != obtainedGeometry) {
+         QWindowSystemInterface::handleGeometryChange<QWindowSystemInterface::SynchronousDelivery>(w, obtainedGeometry);
      }
 -    QWindowsWindow::setSavedDpi(GetDpiForWindow(handle()));
 +    if (QWindowsContext::user32dll.getDpiForWindow)
@@ -2404,7 +2319,7 @@ index 731673b6..bf6840cf 100644
  }
  
  QSurfaceFormat QWindowsWindow::format() const
-@@ -2160,7 +2170,7 @@ void QWindowsWindow::handleDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam)
+@@ -2178,7 +2188,7 @@ void QWindowsWindow::handleDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam)
  
  void QWindowsWindow::handleDpiChangedAfterParent(HWND hwnd)
  {
