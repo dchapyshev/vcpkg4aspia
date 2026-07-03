@@ -11116,6 +11116,10 @@
       "baseline": "0.4.1",
       "port-version": 2
     },
+    "xcb-util-cursor": {
+      "baseline": "0.1.6",
+      "port-version": 0
+    },
     "xcb-util-errors": {
       "baseline": "1.0.1",
       "port-version": 2

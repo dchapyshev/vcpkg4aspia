@@ -1,0 +1,19 @@
+{
+  "name": "xcb-util-cursor",
+  "version": "0.1.6",
+  "description": "XCB cursor library (libxcb-cursor), a port of libXcursor for XCB.",
+  "homepage": "https://gitlab.freedesktop.org/xorg/lib/libxcb-cursor/",
+  "license": null,
+  "dependencies": [
+    "bzip2",
+    {
+      "name": "vcpkg-make",
+      "host": true
+    },
+    "xcb",
+    "xcb-image",
+    "xcb-render-util",
+    "xorg-macros",
+    "xproto"
+  ]
+}
