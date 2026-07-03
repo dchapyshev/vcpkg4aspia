@@ -14,9 +14,14 @@ vcpkg_from_gitlab(
 file(TOUCH "${SOURCE_PATH}/m4/dummy")
 set(ENV{ACLOCAL} "aclocal -I \"${CURRENT_INSTALLED_DIR}/share/xorg/aclocal/\"")
 
+# The default cursor theme search path is derived from ${datadir}, which under vcpkg points inside the
+# install prefix - a path that does not exist on target machines, so no cursor theme is ever found and
+# applications fall back to the tiny non-scalable X core font cursors. Bake the standard system path in.
 vcpkg_make_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     AUTORECONF
+    OPTIONS
+        "--with-cursorpath=~/.local/share/icons:~/.icons:/usr/local/share/icons:/usr/share/icons:/usr/share/pixmaps"
 )
 
 vcpkg_make_install()

@@ -1,0 +1,21 @@
+--- a/src/gui/configure.cmake
++++ b/src/gui/configure.cmake
+@@ -124,6 +124,18 @@
+ if((X11_SUPPORTED) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+     qt_find_package(XCB 1.11 MODULE
+         COMPONENTS XCB PROVIDED_TARGETS XCB::XCB MODULE_NAME gui QMAKE_LIB xcb)
++endif()
++# Static X11: libX11.a references libxcb, and libxcb references Xau/Xdmcp. The CMake FindX11 module
++# does not chain these onto X11::X11, so with statically linked X libraries the link fails with
++# undefined xcb_*/Xau/Xdmcp references from libX11. Add them as interface dependencies so the linker
++# sees them after libX11. XCB::XCB (found just above) is the static libxcb; Xau/Xdmcp come from FindX11.
++if(TARGET X11::X11 AND TARGET XCB::XCB)
++    set_property(TARGET X11::X11 APPEND PROPERTY INTERFACE_LINK_LIBRARIES XCB::XCB)
++    foreach(_aspia_x11_dep X11::Xau X11::Xdmcp)
++        if(TARGET ${_aspia_x11_dep})
++            set_property(TARGET XCB::XCB APPEND PROPERTY INTERFACE_LINK_LIBRARIES ${_aspia_x11_dep})
++        endif()
++    endforeach()
+ endif()
+ if((X11_SUPPORTED) OR QT_FIND_ALL_PACKAGES_ALWAYS)
+     qt_find_package(XCB MODULE
