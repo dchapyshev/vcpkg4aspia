@@ -9,3 +9,7 @@ set(VCPKG_CMAKE_SYSTEM_NAME Linux)
 # build links the system shared libraries; we want them statically linked into the host binaries.
 set(X_VCPKG_FORCE_VCPKG_X_LIBRARIES ON)
 
+# Same for the Wayland client library (used by the host screen-capture/input code): build it from vcpkg
+# as a static lib (with the wayland[force-build] feature) instead of linking the system libwayland-client.
+set(X_VCPKG_FORCE_VCPKG_WAYLAND_LIBRARIES ON)
+

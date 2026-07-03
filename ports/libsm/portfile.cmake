@@ -20,9 +20,15 @@ vcpkg_extract_source_archive(
 
 set(ENV{ACLOCAL} "aclocal -I \"${CURRENT_INSTALLED_DIR}/share/xorg/aclocal/\"")
 
+# Build without libuuid: it only supplies the SM client-id seed, and linking it would add a runtime
+# dependency on the system libuuid (and undefined uuid_* at the final static link, since CMake's FindX11
+# does not chain uuid onto X11::SM). Without it libSM falls back to a host/time/pid based id, which is
+# fine for our use.
 vcpkg_make_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     AUTORECONF
+    OPTIONS
+        --without-libuuid
 )
 
 vcpkg_make_install()

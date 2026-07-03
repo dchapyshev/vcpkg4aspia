@@ -653,6 +653,8 @@
     "xcb-sm": {
       "description": "xcb-sm",
       "dependencies": [
+        "libice",
+        "libsm",
         {
           "name": "qtbase",
           "default-features": false,
