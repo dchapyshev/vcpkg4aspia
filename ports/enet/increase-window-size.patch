@@ -1,0 +1,16 @@
+diff --git a/include/enet/protocol.h b/include/enet/protocol.h
+--- a/include/enet/protocol.h
++++ b/include/enet/protocol.h
+@@ -13,7 +13,11 @@ enum
+    ENET_PROTOCOL_MAXIMUM_MTU             = 4096,
+    ENET_PROTOCOL_MAXIMUM_PACKET_COMMANDS = 32,
+    ENET_PROTOCOL_MINIMUM_WINDOW_SIZE     = 4096,
+-   ENET_PROTOCOL_MAXIMUM_WINDOW_SIZE     = 65536,
++   /* Raised from the stock 65536: the reliable in-flight window caps reliable throughput at
++      windowSize / RTT, which stalls large key frames on long paths. 512 KB covers the top video
++      bitrate up to ~200 ms of RTT. The window is clamped on both ends of the connect handshake,
++      so a peer built with the stock limit safely degrades the connection to 65536. */
++   ENET_PROTOCOL_MAXIMUM_WINDOW_SIZE     = 524288,
+    ENET_PROTOCOL_MINIMUM_CHANNEL_COUNT   = 1,
+    ENET_PROTOCOL_MAXIMUM_CHANNEL_COUNT   = 255,
+    ENET_PROTOCOL_MAXIMUM_PEER_ID         = 0xFFF,

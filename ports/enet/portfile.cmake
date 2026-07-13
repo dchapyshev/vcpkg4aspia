@@ -3,7 +3,9 @@ vcpkg_from_github(OUT_SOURCE_PATH SOURCE_PATH
     REF "v${VERSION}"
     HEAD_REF master
     SHA512 a0d2fa8c957704dd49e00a726284ac5ca034b50b00d2b20a94fa1bbfbb80841467834bfdc84aa0ed0d6aab894608fd6c86c3b94eee46343f0e6d9c22e391dbf9
-    PATCHES fix-export.patch
+    PATCHES
+        fix-export.patch
+        increase-window-size.patch
 )
 
 vcpkg_cmake_configure(
