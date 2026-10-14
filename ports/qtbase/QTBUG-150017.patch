@@ -1,0 +1,42 @@
+From 774ebf546bec0c184d2760df84714fd8742e75b5 Mon Sep 17 00:00:00 2001
+From: Eike Ziller <eike.ziller@qt.io>
+Date: Wed, 23 Sep 2026 14:53:26 +0200
+Subject: [PATCH] QMacStyle: Fix invisible check boxes and radio buttons
+
+With Liquid Glass on macOS 27 the checkboxes drawn via the style by
+QStyledItemDelegate (for tree items with Qt::ItemIsUserCheckable) wasn't
+visible.
+
+The rectangle passed to the draw block of drawNSViewInRect is also
+used as the frame of the NSView, so it is in the coordinates of the
+view's superview. Passing it on to drawInteriorWithFrame:inView: as is
+gives the cell a frame that is shifted by the view's origin relative to
+its own bounds. When that origin is not zero, as for check boxes in item
+views that are not in the first row or column, the indicator ended up
+outside the view.
+
+Translate the context to the origin of the rectangle instead, and draw
+the cell into the bounds of the view.
+
+Fixes: QTBUG-150017
+Pick-to: 6.12 6.8
+Change-Id: I3564551b9bef5f3d9a22469d56162b5b46d6fa15
+Reviewed-by: Tor Arne Vestbø <tor.arne.vestbo@qt.io>
+---
+ src/plugins/styles/mac/qmacstyle_mac.mm | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/plugins/styles/mac/qmacstyle_mac.mm b/src/plugins/styles/mac/qmacstyle_mac.mm
+--- a/src/plugins/styles/mac/qmacstyle_mac.mm
++++ b/src/plugins/styles/mac/qmacstyle_mac.mm
+@@ -3524,8 +3524,8 @@ void QMacStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption *opt, QPai
+             return cs == QStyleHelper::SizeSmall ? 0.5 : 0.0;
+         } ();
+         d->drawNSViewInRect(tb, opt->rect, p, ^(CGContextRef ctx, const CGRect &rect) {
+-            CGContextTranslateCTM(ctx, 0, vOffset);
+-            [tb.cell drawInteriorWithFrame:rect inView:tb];
++            CGContextTranslateCTM(ctx, rect.origin.x, rect.origin.y + vOffset);
++            [tb.cell drawInteriorWithFrame:tb.bounds inView:tb];
+         });
+         break; }
+     case PE_FrameFocusRect:

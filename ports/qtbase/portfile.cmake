@@ -30,6 +30,7 @@ set(${PORT}_PATCHES
         use_inotify_on_freebsd.patch
         silence-winrtbase-coroutine-warnings.diff
         QTBUG-145703.patch # https://github.com/qt/qtbase/commit/239c54452fa60157c90901c8be8685048a65ad0a
+        QTBUG-150017.patch # https://codereview.qt-project.org/c/qt/qtbase/+/773635
         aspia_win7.patch # Windows 7 support (legacy shims)
         aspia_x11.patch # static linking of the X11/xcb libraries
 )
