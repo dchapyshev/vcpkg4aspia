@@ -12,6 +12,8 @@ vcpkg_from_github(
         # Candidate upstream fix: makes configure-time toolchain probes use -Fo/-Fe when CC/LD is cl.exe or clang-cl.
         # Once upstream picks this up (or once we drop --enable-external-build), the MSVC arm64 SVE workaround below can also be removed.
         0007-msvc-use-Fo-in-toolchain-probe.patch
+        # VP9 without lag copies only the changed blocks into the lookahead, like VP8 does.
+        0008-vp9-lookahead-copy-active-blocks.patch
 )
 
 if(CMAKE_HOST_WIN32)
@@ -223,7 +225,12 @@ else()
             set(LIBVPX_TARGET "${LIBVPX_TARGET_ARCH}-linux-gcc")
         endif()
     elseif(VCPKG_TARGET_IS_ANDROID)
-        set(LIBVPX_TARGET "generic-gnu")
+        # generic-gnu builds only the C code, without NEON
+        if(VCPKG_TARGET_ARCHITECTURE STREQUAL arm64)
+            set(LIBVPX_TARGET "arm64-android-gcc")
+        else()
+            set(LIBVPX_TARGET "generic-gnu")
+        endif()
         # Settings
         if(VCPKG_TARGET_ARCHITECTURE STREQUAL x86)
             set(OPTIONS "${OPTIONS} --disable-sse4_1 --disable-avx --disable-avx2 --disable-avx512")
@@ -231,14 +238,14 @@ else()
             set(OPTIONS "${OPTIONS} --disable-avx --disable-avx2 --disable-avx512")
         elseif(VCPKG_TARGET_ARCHITECTURE STREQUAL arm)
             set(OPTIONS "${OPTIONS} --enable-thumb --disable-neon")
-        elseif(VCPKG_TARGET_ARCHITECTURE STREQUAL arm64)
-            set(OPTIONS "${OPTIONS} --enable-thumb")
         endif()
         # Set environment variables for configure
         set(ENV{AS} ${VCPKG_DETECTED_CMAKE_C_COMPILER})
         set(ENV{LDFLAGS} "${LDFLAGS} --target=${VCPKG_DETECTED_CMAKE_C_COMPILER_TARGET}")
-        # Set clang target
-        set(OPTIONS "${OPTIONS} --extra-cflags=--target=${VCPKG_DETECTED_CMAKE_C_COMPILER_TARGET} --extra-cxxflags=--target=${VCPKG_DETECTED_CMAKE_CXX_COMPILER_TARGET}")
+        # Set clang target. Through the environment, not --extra-cflags: configure probes the -march
+        # options for NEON before it applies --extra-cflags.
+        set(ENV{CFLAGS} "--target=${VCPKG_DETECTED_CMAKE_C_COMPILER_TARGET}")
+        set(ENV{CXXFLAGS} "--target=${VCPKG_DETECTED_CMAKE_CXX_COMPILER_TARGET}")
         # Unset nasm and let AS do its job
         unset(AS_NASM)
     elseif(VCPKG_TARGET_IS_OSX)
