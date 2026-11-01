@@ -1,4 +1,4 @@
-set(GDK_EDITION_NUMBER 260402)
+set(GDK_EDITION_NUMBER 260405)
 
 # The GDK contains a combination of static C++ libraries and DLL-based extension libraries.
 vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)
@@ -6,13 +6,13 @@ vcpkg_check_linkage(ONLY_DYNAMIC_LIBRARY)
 vcpkg_download_distfile(ARCHIVE_CORE
     URLS "https://www.nuget.org/api/v2/package/Microsoft.GDK.Core/${VERSION}"
     FILENAME "ms-gdk-core.${VERSION}.zip"
-    SHA512 72c7fc4b15c652b616c2372ee4ebd94d7205161c2d383dd773ab2f5a10dcb593311ccceecb66127e4f645176eb2a2d2d3a6d7eecb2a66b40173647013d819541
+    SHA512 e7e7948e23c68639cd41c30f092369f8896245f719d9a6d456db7384cce51cd76e43e36df2dbc28f432fc9d4ad79a17b67a0564ada4c04c4a827bd248a38c4e4
 )
 
 vcpkg_download_distfile(ARCHIVE
     URLS "https://www.nuget.org/api/v2/package/Microsoft.GDK.Windows/${VERSION}"
     FILENAME "ms-gdk-windows.${VERSION}.zip"
-    SHA512 69ae9e33d259cf742fcf30c5cffa528ef018d89dc1a6d0446170656c789277fbf823c956886cc65c971c277df2878355da995c518b93d4f4ffae2c50967fa9f0
+    SHA512 6d3c9a22bc3d3ce824cc46979bcddb996d175b351e07a1fcf34027d9555e2c395d67af839f1739262e4b4afa9bc01b1624a4a0bb24d4e52947a3819848baed76
 )
 
 vcpkg_extract_source_archive(
@@ -57,7 +57,7 @@ foreach(t IN LISTS HEADERS)
     list(APPEND CORE_INCLUDES ${h})
 endforeach()
 
-set(INCLUDE_DIRS httpClient Xal xsapi-c xsapi-cpp)
+set(INCLUDE_DIRS cpprest httpClient pplx Xal xsapi-c xsapi-cpp)
 
 file(INSTALL "${WINDOWS_PATH}/bin/${VCPKG_TARGET_ARCHITECTURE}/Microsoft.Xbox.Services.C.Thunks.dll" DESTINATION "${CURRENT_PACKAGES_DIR}/bin")
 file(INSTALL "${WINDOWS_PATH}/lib/${VCPKG_TARGET_ARCHITECTURE}/Microsoft.Xbox.Services.C.Thunks.lib" DESTINATION "${CURRENT_PACKAGES_DIR}/lib")
@@ -81,6 +81,19 @@ endforeach()
 foreach(t IN LISTS INCLUDE_DIRS)
     file(INSTALL "${WINDOWS_PATH}/include/${t}" DESTINATION "${CURRENT_PACKAGES_DIR}/include")
 endforeach()
+
+# The bundled cpprest headers use stdext::checked_array_iterator, which current MSVC no longer provides.
+# Use the unchecked std::copy that cpprest already uses on other platforms; each range is already bounded.
+vcpkg_replace_string("${CURRENT_PACKAGES_DIR}/include/cpprest/containerstream.h"
+    "stdext::checked_array_iterator<_CharType *>(ptr, count)" "ptr")
+vcpkg_replace_string("${CURRENT_PACKAGES_DIR}/include/cpprest/producerconsumerstream.h"
+    "stdext::checked_array_iterator<_CharType *>(dest, count)" "dest")
+vcpkg_replace_string("${CURRENT_PACKAGES_DIR}/include/cpprest/producerconsumerstream.h"
+    "stdext::checked_array_iterator<_CharType *>(wbegin(), static_cast<size_t>(avail))" "wbegin()")
+
+# The XSAPI C++ headers use assert without including <assert.h>; current MSVC STL headers no longer provide it transitively.
+vcpkg_replace_string("${CURRENT_PACKAGES_DIR}/include/xsapi-cpp/services.h"
+    "#include \"xsapi-c/services_c.h\"" "#include <assert.h>\n#include \"xsapi-c/services_c.h\"")
 
 foreach(t IN LISTS CORE_LIBS)
     file(INSTALL "${WINDOWS_PATH}/lib/${VCPKG_TARGET_ARCHITECTURE}/${t}" DESTINATION "${CURRENT_PACKAGES_DIR}/lib")
@@ -134,8 +147,6 @@ set(EXT_TOOLSET 143)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/gdk-config.cmake.in"
     "${CURRENT_PACKAGES_DIR}/share/${PORT}/${PORT}-config.cmake"
     @ONLY)
-
-#file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include")
 
 vcpkg_install_copyright(FILE_LIST ${LICENSE_FILES})
 

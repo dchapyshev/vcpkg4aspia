@@ -1,8 +1,10 @@
+vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
+
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO SlickQuant/slick-net
     REF "v${VERSION}"
-    SHA512 e60051992d54ccb451d10bdf3e1074935eca75e570973c4cd7d0c4e814e9f9f4ecf40fe0bef750eb9df483c5d056a8fa7192c9b661f97488cfa749b06cbe5af5
+    SHA512 246c12d331063849943ae6a0c988fddc8b5ad4110a1fede0c361455d06148fe7587dbd0b8233b901f12c9d0279147846cab90cf99e275e84823fca77c921f5f6
     HEAD_REF main
     PATCHES
         slick-dependencies.patch

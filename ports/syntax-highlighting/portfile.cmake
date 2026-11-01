@@ -2,7 +2,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO KDE/syntax-highlighting
     REF "v${VERSION}"
-    SHA512 d8b1b5c8e52d79140d49f361fb10e200d8b37fdcc39ebfbe4926f35f8991049eb04a8572a695aa6dd9a4e4240b0cee146844a260a081dcc2d7df14d4eb52a55c
+    SHA512 e64a1140239496dc8680fa01e6e61ca4f3aa33db0cb75ee3fdec4fb48cb64e1885779c2625cf6875828640d675a4a44d51689b2a8f68e13f651bbd79927b22d5
     HEAD_REF master
 )
 
@@ -23,6 +23,8 @@ vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
         -DBUILD_TESTING=OFF
+        -DCMAKE_DISABLE_FIND_PACKAGE_Qt6Tools=ON
+        -DCMAKE_DISABLE_FIND_PACKAGE_Qt6ToolsTools=ON
         -DBUILD_codeeditor=OFF
         -DBUILD_codepdfprinter=OFF
         -DBUILD_minimaltest=OFF

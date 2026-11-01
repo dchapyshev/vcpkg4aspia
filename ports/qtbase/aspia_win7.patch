@@ -1343,8 +1343,8 @@ index 72bbe736..e8e7f4f5 100644
          return {};
  
      QRhi::AdapterList list;
-@@ -2967,6 +2989,9 @@ QD3D12Descriptor QD3D12SamplerManager::getShaderVisibleDescriptor(const D3D12_SA
-     return descriptor;
+@@ -3077,6 +3099,9 @@ QD3D12Descriptor QD3D12SamplerManager::getShaderVisibleDescriptors(const QVarLengthAr
+     return startDescriptor;
  }
  
 +typedef HRESULT(WINAPI* D3D12SerializeVersionedRootSignatureFunc) (const D3D12_VERSIONED_ROOT_SIGNATURE_DESC *, ID3DBlob **, ID3DBlob **);

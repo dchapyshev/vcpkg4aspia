@@ -1,11 +1,12 @@
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO harfbuzz/harfbuzz
-    REF ${VERSION}
-    SHA512 b7642a81eb021bf96cf8c91c5ebdde7f4fdfd40c76db722f00cf001125f4b81b954d08485774d2b23318d49b1e954fa0189ba8f10db56d148f33f9d90891d0cb
+    REF "${VERSION}"
+    SHA512 46a7b6aca73bd3ff0d0559c63cbb17e1bcb004902916a75a37455812b5b1060fbe8332a557e0fc7e23e39bdb69570bf14fd9db86c278fe32a5cb0316c98a951e
     HEAD_REF master
     PATCHES
         ${ANDROID_LOCALECONV_L_PATCH}
+        no-threads-on-emscripten.patch
 )
 
 if("icu" IN_LIST FEATURES)
@@ -111,6 +112,13 @@ if(VCPKG_TARGET_IS_APPLE)
     list(APPEND LANGUAGES OBJC OBJCXX)
 endif()
 
+if(VCPKG_TARGET_IS_EMSCRIPTEN)
+    # The hb-gpu-* utilities fail to link on wasm32-emscripten (some objects
+    # are built with -pthread and some without, so wasm-ld rejects
+    # --shared-memory); only the libraries are useful here anyway.
+    list(APPEND OPTIONS -Dutilities=disabled)
+endif()
+
 vcpkg_configure_meson(
     SOURCE_PATH "${SOURCE_PATH}"
     LANGUAGES ${LANGUAGES}
@@ -120,6 +128,7 @@ vcpkg_configure_meson(
         -Dtests=disabled
         -Dbenchmark=disabled
         -Dgpu_demo=disabled
+        -Dchafa=disabled     # no chafa feature; don't let hb-view auto-detect a system copy
         ${OPTIONS}
     OPTIONS_DEBUG
         ${OPTIONS_DEBUG}
@@ -186,4 +195,4 @@ if(VCPKG_LIBRARY_LINKAGE STREQUAL "static")
     file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/bin" "${CURRENT_PACKAGES_DIR}/debug/bin")
 endif()
 
-vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/COPYING")
+vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/COPYING" "${SOURCE_PATH}/src/ms-use/COPYING")

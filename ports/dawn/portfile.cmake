@@ -2,7 +2,7 @@ if (VCPKG_TARGET_IS_EMSCRIPTEN)
     vcpkg_download_distfile(ARCHIVE
         URLS "https://github.com/google/dawn/releases/download/v${VERSION}/emdawnwebgpu_pkg-v${VERSION}.zip"
         FILENAME "emdawnwebgpu_pkg-v${VERSION}.zip"
-        SHA512 615257384ad7df17174c5733c17d8ac0473dfdcddeac69e334d7109501954dc42e77ed54deb666bf44581fcf8e69c2365311626786cd267e52a3d48d7a9441c5
+        SHA512 bd89894435f502d904955ad0207a4245c192dda183857eb87c6487cdb5a799ae3bbd19ab1f4c90e32b8f808dfcabf58a190e5c480de198dd7aa5728506bef6c1
     )
     vcpkg_extract_source_archive(
         SOURCE_PATH
@@ -36,71 +36,101 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO google/dawn
     REF "v${VERSION}"
-    SHA512 d26d95efd20006f1949804e27c766c31a88183daf7d1c3f42022d856042ea523e1253adb8c90a365bad10a7c3e80acefbae5a3ed6d761f9754573a678283c674
+    SHA512 3c1c2f71508547adbe564dc0da8215e6d54c64176e611ba7e597db2f38d93cba2e735dc6f672585da8ed7ae0ad0c0784f02adcdda85026fe6def3b87fc4349d5
     HEAD_REF master
     PATCHES
-        001-fix-windows-build.patch
+        # DAWN_BUILD_MONOLITHIC_LIBRARY SHARED/STATIC requires BUILD_SHARED_LIBS=OFF
+        001-fix-linkage.patch
+        002-fix-windows-build.patch
         003-force-disable-cxx-module.patch
         004-deps.patch
         005-bsd-support.patch
+        006-fix-header-bsd.patch
         008-wrong-dxcapi-include.patch
         009-fix-tint-install.patch
-        010-fix-glslang.patch
-        011-fix-dxc.patch
 )
 
-function(checkout_in_path PATH URL REF)
-    cmake_parse_arguments(EXTERNAL "" "" "PATCHES" ${ARGN})
-    if(EXISTS "${PATH}")
-        file(GLOB_RECURSE subdirectory_children "${CURRENT_PACKAGES_DIR}/include/${directory_child}/*")
-        if(NOT "${subdirectory_children}" STREQUAL "")
-            return()
+function(z_vcpkg_from_github_to_path)
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "OUT_SOURCE_PATH;REPO;REF;SHA512;HEAD_REF" "PATCHES")
+    if(EXISTS "${arg_OUT_SOURCE_PATH}")
+        file(GLOB children LIST_DIRECTORIES true "${arg_OUT_SOURCE_PATH}/*")
+        if(NOT "${children}" STREQUAL "")
+            message(FATAL_ERROR "The path ${arg_OUT_SOURCE_PATH} already exists and is not empty.")
         else()
-            file(REMOVE_RECURSE "${PATH}")
+            file(REMOVE_RECURSE "${arg_OUT_SOURCE_PATH}")
         endif()
+        unset(children)
     endif()
-
-    vcpkg_from_git(
-        OUT_SOURCE_PATH DEP_SOURCE_PATH
-        URL "${URL}"
-        REF "${REF}"
-        PATCHES ${EXTERNAL_PATCHES}
+    vcpkg_from_github(
+        OUT_SOURCE_PATH out_source_path
+        REPO "${arg_REPO}"
+        REF "${arg_REF}"
+        SHA512 "${arg_SHA512}"
+        HEAD_REF "${arg_HEAD_REF}"
+        PATCHES ${arg_PATCHES}
     )
-    file(RENAME "${DEP_SOURCE_PATH}" "${PATH}")
-    file(REMOVE_RECURSE "${DEP_SOURCE_PATH}")
+    file(RENAME "${out_source_path}" "${arg_OUT_SOURCE_PATH}")
+    file(REMOVE_RECURSE "${out_source_path}")
 endfunction()
 
-checkout_in_path(
-    "${SOURCE_PATH}/third_party/jinja2"
-    "https://chromium.googlesource.com/chromium/src/third_party/jinja2"
-    "c3027d884967773057bf74b957e3fea87e5df4d7"
+function(z_vcpkg_from_git_to_path)
+    cmake_parse_arguments(PARSE_ARGV 0 arg "" "OUT_SOURCE_PATH;URL;REF" "PATCHES")
+    if(EXISTS "${arg_OUT_SOURCE_PATH}")
+        file(GLOB children LIST_DIRECTORIES true "${arg_OUT_SOURCE_PATH}/*")
+        if(NOT "${children}" STREQUAL "")
+            message(FATAL_ERROR "The path ${arg_OUT_SOURCE_PATH} already exists and is not empty.")
+        else()
+            file(REMOVE_RECURSE "${arg_OUT_SOURCE_PATH}")
+        endif()
+        unset(children)
+    endif()
+    vcpkg_from_git(
+        OUT_SOURCE_PATH out_source_path
+        URL "${arg_URL}"
+        REF "${arg_REF}"
+        PATCHES ${arg_PATCHES}
+    )
+    file(RENAME "${out_source_path}" "${arg_OUT_SOURCE_PATH}")
+    file(REMOVE_RECURSE "${out_source_path}")
+endfunction()
+
+z_vcpkg_from_git_to_path(
+    OUT_SOURCE_PATH "${SOURCE_PATH}/third_party/jinja2"
+    URL "https://chromium.googlesource.com/chromium/src/third_party/jinja2"
+    REF c3027d884967773057bf74b957e3fea87e5df4d7
 )
 
-checkout_in_path(
-    "${SOURCE_PATH}/third_party/markupsafe"
-    "https://chromium.googlesource.com/chromium/src/third_party/markupsafe"
-    "4256084ae14175d38a3ff7d739dca83ae49ccec6"
+z_vcpkg_from_git_to_path(
+    OUT_SOURCE_PATH "${SOURCE_PATH}/third_party/markupsafe"
+    URL "https://chromium.googlesource.com/chromium/src/third_party/markupsafe"
+    REF 4256084ae14175d38a3ff7d739dca83ae49ccec6
 )
 
-checkout_in_path(
-    "${SOURCE_PATH}/third_party/spirv-headers/src"
-    "https://github.com/KhronosGroup/SPIRV-Headers"
-    "c63848ecf2200425511319fd8bf2c17b751e501e"
+z_vcpkg_from_github_to_path(
+    OUT_SOURCE_PATH "${SOURCE_PATH}/third_party/spirv-headers/src"
+    REPO KhronosGroup/SPIRV-Headers
+    REF 04fd3caa1e8267e4d95c806cad901181728e1006
+    SHA512 90a60f8538b704b9c4e799d044c2e14673d6a42742d17315cd65e2ef7870fb094eb74450bf12a768a539c920d2cb9962fc83e328594ef72507f6b882915eb5ab
+    HEAD_REF main
 )
 
-checkout_in_path(
-    "${SOURCE_PATH}/third_party/spirv-tools/src"
-    "https://github.com/KhronosGroup/SPIRV-Tools"
-    "58fe144fdc8847b303be51d4f8fcc9e7da17056e"
+z_vcpkg_from_github_to_path(
+    OUT_SOURCE_PATH "${SOURCE_PATH}/third_party/spirv-tools/src"
+    REPO KhronosGroup/SPIRV-Tools
+    REF e265f557e3db20843c6d135d2b9eeb51ecc79d73
+    SHA512 2c06b7fc6fdf51fdb27ee5c80cc632521f53da14571f5511d34646277580c184a0b52033169437848791e28737f08e612d350f88ba230ff7eb5fc73ef439446b
+    HEAD_REF main
     PATCHES
         # Dawn sets SPIRV_WERROR to OFF when building SPIRV-Tools, but https://github.com/KhronosGroup/SPIRV-Tools/commit/337fdb6a284fe7f7e374a14271f8e20e579f3263 ignores that CMake variable and forces /WX
         800-msvc-spirv-tools-disable-warnaserror.patch
 )
 
-checkout_in_path(
-    "${SOURCE_PATH}/third_party/webgpu-headers/src"
-    "https://github.com/webgpu-native/webgpu-headers"
-    "a11ef4462405c4506ad7284e5b1edeff2750bb54"
+z_vcpkg_from_github_to_path(
+    OUT_SOURCE_PATH "${SOURCE_PATH}/third_party/webgpu-headers/src"
+    REPO webgpu-native/webgpu-headers
+    REF b5ff182caa90e53293f47939716281342c0812ba
+    SHA512 ec5a9d1afff0c55b2892e6cf4372d8065220222e5e7b7e639faf5def43d8d5e68f4d5203555449d347009c17bac20ab4975766bc12ddd3ca5c25525815086463
+    HEAD_REF main
 )
 
 vcpkg_find_acquire_program(PYTHON3)
@@ -126,17 +156,13 @@ vcpkg_check_features(
 )
 
 set(DAWN_USE_BUILT_DXC OFF)
-if(DAWN_ENABLE_D3D11 OR DAWN_ENABLE_D3D12)
+if(DAWN_ENABLE_D3D12)
     set(DAWN_USE_BUILT_DXC ON)
 endif()
 set(DAWN_USE_TINT_SPV OFF)
 if(DAWN_ENABLE_VULKAN)
     set(DAWN_USE_TINT_SPV ON)
 endif()
-
-# DAWN_BUILD_MONOLITHIC_LIBRARY SHARED/STATIC requires BUILD_SHARED_LIBS=OFF
-set(VCPKG_LIBRARY_LINKAGE_BACKUP ${VCPKG_LIBRARY_LINKAGE})
-set(VCPKG_LIBRARY_LINKAGE static)
 
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
@@ -161,9 +187,6 @@ vcpkg_cmake_configure(
 
 vcpkg_cmake_install()
 vcpkg_cmake_config_fixup(CONFIG_PATH lib/cmake/Dawn)
-
-# Restore the original library linkage
-set(VCPKG_LIBRARY_LINKAGE ${VCPKG_LIBRARY_LINKAGE_BACKUP})
 
 list(APPEND DAWN_ABSL_REQUIRES
     absl_flat_hash_set
