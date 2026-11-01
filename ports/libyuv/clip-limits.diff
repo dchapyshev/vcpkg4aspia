@@ -1,0 +1,27 @@
+diff --git a/source/scale_argb.cc b/source/scale_argb.cc
+index 5fa58fd..ee49126 100644
+--- a/source/scale_argb.cc
++++ b/source/scale_argb.cc
+@@ -1093,16 +1093,22 @@ static int ScaleARGB(const uint8_t* src,
+   ScaleSlope(src_width, src_height, dst_width, dst_height, filtering, &x, &y,
+              &dx, &dy);
+   src_width = Abs(src_width);
++  // The scalers below take src_width and src_height as the size of the image
++  // that starts at src, so reduce them by the columns and rows that clipping
++  // skips. Otherwise their limits are off by the clip offset and the last rows
++  // read past the end of the source.
+   if (clip_x) {
+     int64_t clipf = (int64_t)(clip_x)*dx;
+     x += (clipf & 0xffff);
+     src += (clipf >> 16) * 4;
++    src_width -= (int)(clipf >> 16);
+     dst += clip_x * 4;
+   }
+   if (clip_y) {
+     int64_t clipf = (int64_t)(clip_y)*dy;
+     y += (clipf & 0xffff);
+     src += (clipf >> 16) * (intptr_t)src_stride;
++    src_height -= (int)(clipf >> 16);
+     dst += clip_y * dst_stride;
+   }
+ 

@@ -6,6 +6,7 @@ vcpkg_from_git(
     PATCHES
         cmake.diff
         neon-detect.diff
+        clip-limits.diff
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
