@@ -51,7 +51,10 @@ file(REMOVE_RECURSE
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
-        -DCMAKE_CXX_STANDARD=17
+        # For Aspia: the same standard as the project. The type of fixed_address_empty_string
+        # depends on whether std::string has a constexpr constructor (C++20), and a mismatch
+        # leaves it unresolved with MSVC.
+        -DCMAKE_CXX_STANDARD=20
         -Dprotobuf_BUILD_SHARED_LIBS=${protobuf_BUILD_SHARED_LIBS}
         -Dprotobuf_MSVC_STATIC_RUNTIME=${protobuf_MSVC_STATIC_RUNTIME}
         -Dprotobuf_BUILD_TESTS=OFF
