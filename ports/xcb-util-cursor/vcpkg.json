@@ -10,7 +10,7 @@
       "name": "vcpkg-make",
       "host": true
     },
-    "xcb",
+    "libxcb",
     "xcb-image",
     "xcb-render-util",
     "xorg-macros",
