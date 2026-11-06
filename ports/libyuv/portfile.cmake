@@ -1,7 +1,7 @@
 vcpkg_from_git(
     OUT_SOURCE_PATH SOURCE_PATH
     URL https://chromium.googlesource.com/libyuv/libyuv
-    REF d98915a654d3564e4802a0004add46221c4e4348
+    REF 9f751100d276c7a5a6aed2f35822f10730012a86
     # Check https://chromium.googlesource.com/libyuv/libyuv/+/refs/heads/main/include/libyuv/version.h for a version!
     PATCHES
         cmake.diff

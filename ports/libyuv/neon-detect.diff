@@ -1,8 +1,8 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index c6cce8a..ac26462 100644
+index 77e0527f..b2b09d4a 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -106,20 +106,40 @@ if(NOT MSVC)
+@@ -102,20 +102,39 @@ if(NOT MSVC)
    endif()
  
    if(arch_lowercase STREQUAL "aarch64" OR arch_lowercase STREQUAL "arm64")
@@ -30,7 +30,6 @@ index c6cce8a..ac26462 100644
 +#error DOTPROD and INT8 not supported
 +#endif
 +int main(){return 0;}
-+}
 +    " CAN_COMPILE_NEON)
 +    set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQURED_FLAGS})
 +    set(CMAKE_TRY_COMPILE_TARGET_TYPE ${OLD_CMAKE_TRY_COMPILE_TARGET_TYPE})
@@ -57,3 +56,12 @@ index c6cce8a..ac26462 100644
  
      set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
      set(OLD_CMAKE_TRY_COMPILE_TARGET_TYPE ${CMAKE_TRY_COMPILE_TARGET_TYPE})
+@@ -124,7 +143,7 @@ if(NOT MSVC)
+     # Check whether the compiler can compile SME functions; this fails
+     # with Clang for Windows.
+     check_c_source_compiles("
+-__arm_locally_streaming void func(void) { }
++__arm_locally_streaming __arm_new(\"za\") void func(void) { }
+ int main(void) { return 0; }
+     " CAN_COMPILE_SME)
+     set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQUIRED_FLAGS})
