@@ -82,7 +82,7 @@ if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
         set(LIBVPX_TARGET_VS "vs15")
     endif()
 
-    set(OPTIONS --disable-examples --disable-tools --disable-docs --enable-pic --disable-dependency-tracking)
+    set(OPTIONS --disable-examples --disable-tools --disable-docs --enable-pic --disable-dependency-tracking --disable-vp8-encoder)
 
     # Force VS generation to avoids Unix-style rules that break with cl/ar semantics
     list(APPEND OPTIONS --enable-external-build)
@@ -162,7 +162,7 @@ if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
 
 else()
 
-    set(OPTIONS --disable-examples --disable-tools --disable-docs --disable-unit-tests --enable-pic)
+    set(OPTIONS --disable-examples --disable-tools --disable-docs --disable-unit-tests --enable-pic --disable-vp8-encoder)
 
     set(OPTIONS_DEBUG --enable-debug-libs --enable-debug --prefix=${CURRENT_PACKAGES_DIR}/debug)
     set(OPTIONS_RELEASE --prefix=${CURRENT_PACKAGES_DIR})
